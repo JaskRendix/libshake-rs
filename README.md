@@ -14,6 +14,15 @@ The library currently includes:
 - A shared, platform‑agnostic `Device` API  
 - A rich `Effect` model supporting rumble, periodic, constant, and ramp effects, including envelopes and timing
 
+## Origins
+
+The original libShake was written in C and provided Linux and macOS
+force‑feedback support. This Rust version is a modern, safe rewrite
+inspired by that project, with a redesigned API and updated backend
+architecture.
+
+The original C implementation can be found at: https://github.com/zear/libShake
+
 ## Installation
 
 ### Linux
@@ -70,6 +79,7 @@ device.play(id)?;
 
 ## Authors
 
+- Giorgio (JaskRendix)  
 - Artur Rojek (zear)  
 - Joe Vargas (jxv)
 

@@ -1,7 +1,7 @@
 use shake::effect::*;
 use shake::simple::*;
 
-// --- Magnitude and level boundaries ----------------------------------------
+// Magnitude and level boundaries
 
 #[test]
 fn periodic_magnitude_respects_min_and_max() {
@@ -41,7 +41,7 @@ fn ramp_levels_respect_boundaries() {
     }
 }
 
-// --- Duration and envelope edge cases ---------------------------------------
+// Duration and envelope edge cases
 
 #[test]
 fn zero_duration_effects_do_not_panic() {
@@ -72,7 +72,7 @@ fn envelope_max_lengths_are_valid() {
     assert_eq!(env.fade_length, ENVELOPE_FADE_LENGTH_MAX);
 }
 
-// --- Float scaling edge cases ----------------------------------------------
+// Float scaling edge cases
 
 #[test]
 fn negative_force_is_clamped_or_preserved() {
@@ -98,7 +98,7 @@ fn extremely_large_force_does_not_overflow() {
     }
 }
 
-// --- Repeated construction stability ----------------------------------------
+// Repeated construction stability
 
 #[test]
 fn repeated_effect_construction_is_stable() {

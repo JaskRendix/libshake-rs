@@ -16,7 +16,7 @@ use crate::effect::{
 };
 
 //
-// Linux FF constants (from linux/input-event-codes.h)
+// Linux FF constants
 //
 const EV_FF: u16 = 0x15;
 
