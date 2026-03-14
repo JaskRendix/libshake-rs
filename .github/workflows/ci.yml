@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --all --examples --verbose
+
+      - name: Test
+        run: cargo test --all --verbose
+
+      - name: Run examples (non-fatal)
+        run: |
+          for ex in examples/*.rs; do
+            name=$(basename "$ex" .rs)
+            cargo run --example "$name" || true
+          done
