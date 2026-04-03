@@ -20,8 +20,8 @@ use crate::error::{ShakeError, ShakeResult};
 //
 const EV_FF: u16 = 0x15;
 
-const FF_RUMBLE: u16 = 0x50;
-const FF_PERIODIC: u16 = 0x51;
+pub const FF_RUMBLE: u16 = 0x50;
+pub const FF_PERIODIC: u16 = 0x51;
 const FF_CONSTANT: u16 = 0x52;
 const FF_RAMP: u16 = 0x57;
 

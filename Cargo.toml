@@ -3,9 +3,6 @@ name = "shake"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-crate-type = ["rlib"]
-
 [dependencies]
 libc = "0.2"
 nix = { version = "0.28", features = ["fs", "ioctl"] }
@@ -13,5 +10,7 @@ nix = { version = "0.28", features = ["fs", "ioctl"] }
 [dev-dependencies]
 rand = "0.8"
 
-[build-dependencies]
-bindgen = "0.69"
+[features]
+default = ["linux-backend"]
+linux-backend = []
+mock-backend = []

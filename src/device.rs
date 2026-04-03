@@ -3,9 +3,17 @@ use std::path::PathBuf;
 
 use crate::effect::Effect;
 use crate::error::{ShakeError, ShakeResult};
+use crate::simple::*;
 
-#[cfg(target_os = "linux")]
+// Backend selection
+#[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
 use crate::linux as backend;
+
+#[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+use crate::linux::{FF_PERIODIC, FF_RUMBLE};
+
+#[cfg(feature = "mock-backend")]
+use crate::mock as backend;
 
 pub struct Device {
     id: u32,
@@ -25,24 +33,21 @@ pub struct DeviceInfo {
 }
 
 impl Device {
-    //
-    // Device enumeration
-    //
     pub fn enumerate() -> ShakeResult<Vec<DeviceInfo>> {
         let mut devices = Vec::new();
-        let entries = backend::scan_event_nodes()?;
+        let entries: Vec<PathBuf> = backend::scan_event_nodes()?;
 
         for path in entries {
             if backend::probe_device(&path)? {
                 let file = backend::open_device(&path)?;
-                let info = backend::query_device(&file)?; // backend::DeviceInfo
+                let info = backend::query_device(&file)?;
 
                 devices.push(DeviceInfo {
                     id: devices.len() as u32,
                     name: info.name,
                     capacity: info.capacity,
                     features: info.features,
-                    path: path.clone(),
+                    path,
                 });
             }
         }
@@ -50,9 +55,6 @@ impl Device {
         Ok(devices)
     }
 
-    //
-    // Open by ID
-    //
     pub fn open(id: u32) -> ShakeResult<Device> {
         let infos = Device::enumerate()?;
         let info = infos
@@ -75,9 +77,6 @@ impl Device {
         })
     }
 
-    //
-    // Metadata accessors
-    //
     pub fn id(&self) -> u32 {
         self.id
     }
@@ -98,9 +97,6 @@ impl Device {
         &self.path
     }
 
-    //
-    // Effect management
-    //
     pub fn upload(&self, effect: &Effect) -> ShakeResult<i32> {
         backend::upload_effect(&self.file, effect)
     }
@@ -117,15 +113,50 @@ impl Device {
         backend::stop_effect(&self.file, id)
     }
 
-    //
-    // Device settings
-    //
     pub fn set_gain(&self, gain: u16) -> ShakeResult<()> {
         backend::set_gain(&self.file, gain)
     }
 
     pub fn set_autocenter(&self, value: u16) -> ShakeResult<()> {
         backend::set_autocenter(&self.file, value)
+    }
+
+    #[cfg_attr(feature = "mock-backend", allow(dead_code))]
+    fn has_feature(&self, bit: u16) -> bool {
+        let idx = (bit / 64) as usize;
+        let b = bit % 64;
+
+        self.features
+            .get(idx)
+            .map(|chunk| (chunk & (1 << b)) != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+    pub fn supports_rumble(&self) -> bool {
+        self.has_feature(FF_RUMBLE)
+    }
+
+    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+    pub fn supports_periodic(&self) -> bool {
+        self.has_feature(FF_PERIODIC)
+    }
+
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_rumble(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_periodic(&self) -> bool {
+        true
+    }
+
+    pub fn rumble(&self, strong: f32, weak: f32, secs: f32) -> ShakeResult<i32> {
+        let effect = simple_rumble(strong, weak, secs);
+        let id = self.upload(&effect)?;
+        self.play(id)?;
+        Ok(id)
     }
 }
 

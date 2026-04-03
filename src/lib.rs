@@ -3,5 +3,10 @@ pub mod effect;
 pub mod error;
 pub mod simple;
 
-#[cfg(target_os = "linux")]
-mod linux;
+// Linux backend (default)
+#[cfg(feature = "linux-backend")]
+pub mod linux;
+
+// Mock backend (overrides Linux when enabled)
+#[cfg(feature = "mock-backend")]
+pub mod mock;

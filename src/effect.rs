@@ -53,30 +53,24 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub fn new(attack_length: u16, attack_level: u16, fade_length: u16, fade_level: u16) -> Self {
+    pub fn new(a_len: u16, a_lvl: u16, f_len: u16, f_lvl: u16) -> Self {
         Self {
-            attack_length,
-            attack_level,
-            fade_length,
-            fade_level,
+            attack_length: a_len.min(ENVELOPE_ATTACK_LENGTH_MAX),
+            attack_level: a_lvl.min(ENVELOPE_ATTACK_LEVEL_MAX),
+            fade_length: f_len.min(ENVELOPE_FADE_LENGTH_MAX),
+            fade_level: f_lvl.min(ENVELOPE_FADE_LEVEL_MAX),
         }
     }
 }
 
-//
-// Rumble effect
-//
 #[derive(Debug, Clone, Copy)]
 pub struct RumbleEffect {
     pub strong_magnitude: u16,
     pub weak_magnitude: u16,
-    pub duration: u16, // milliseconds
-    pub delay: u16,    // milliseconds
+    pub duration: u16,
+    pub delay: u16,
 }
 
-//
-// Periodic effect
-//
 #[derive(Debug, Clone, Copy)]
 pub struct PeriodicEffect {
     pub waveform: PeriodicWaveform,
@@ -85,36 +79,27 @@ pub struct PeriodicEffect {
     pub offset: i16,
     pub phase: u16,
     pub envelope: Envelope,
-    pub duration: u16, // milliseconds
-    pub delay: u16,    // milliseconds
+    pub duration: u16,
+    pub delay: u16,
 }
 
-//
-// Constant effect
-//
 #[derive(Debug, Clone, Copy)]
 pub struct ConstantEffect {
     pub level: i16,
     pub envelope: Envelope,
-    pub duration: u16, // milliseconds
-    pub delay: u16,    // milliseconds
+    pub duration: u16,
+    pub delay: u16,
 }
 
-//
-// Ramp effect
-//
 #[derive(Debug, Clone, Copy)]
 pub struct RampEffect {
     pub start_level: i16,
     pub end_level: i16,
     pub envelope: Envelope,
-    pub duration: u16, // milliseconds
-    pub delay: u16,    // milliseconds
+    pub duration: u16,
+    pub delay: u16,
 }
 
-//
-// Main Effect enum
-//
 #[derive(Debug, Clone)]
 pub enum Effect {
     Rumble(RumbleEffect),
