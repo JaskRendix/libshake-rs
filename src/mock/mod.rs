@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::effect::Effect;
@@ -14,11 +15,11 @@ pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
     Ok(vec![PathBuf::from("/dev/mock0")])
 }
 
-pub fn probe_device(_path: &PathBuf) -> ShakeResult<bool> {
+pub fn probe_device(_path: &Path) -> ShakeResult<bool> {
     Ok(true)
 }
 
-pub fn open_device(_path: &PathBuf) -> ShakeResult<File> {
+pub fn open_device(_path: &Path) -> ShakeResult<File> {
     File::open("/dev/null").map_err(|_| ShakeError::Device)
 }
 

@@ -105,3 +105,45 @@ mod mock_tests {
         assert_eq!(dev.name(), dev2.name());
     }
 }
+
+#[test]
+fn open_path_opens_same_device() {
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return, // no devices available
+    };
+
+    let dev1 = Device::open_info(info).unwrap();
+    let dev2 = Device::open_path(info.path.as_path()).unwrap();
+
+    assert_eq!(dev1.name(), dev2.name());
+    assert_eq!(dev1.capacity(), dev2.capacity());
+    assert_eq!(dev1.features(), dev2.features());
+}
+
+#[test]
+fn open_path_invalid_returns_error() {
+    use std::path::Path;
+
+    let result = Device::open_path(Path::new("/this/does/not/exist"));
+    assert!(result.is_err());
+}
+
+#[test]
+fn enumerate_assigns_unique_ids() {
+    let list = Device::enumerate().unwrap();
+    let mut ids = list.iter().map(|d| d.id).collect::<Vec<_>>();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), list.len());
+}
+
+#[test]
+fn deviceinfo_path_is_preserved() {
+    let list = Device::enumerate().unwrap();
+    if let Some(info) = list.first() {
+        let dev = Device::open_info(info).unwrap();
+        assert_eq!(dev.path(), info.path.as_path());
+    }
+}

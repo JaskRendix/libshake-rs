@@ -3,6 +3,7 @@
 use std::fs;
 use std::fs::File;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd};
+use std::path::Path;
 use std::path::PathBuf;
 
 use nix::fcntl::{self, OFlag};
@@ -89,7 +90,7 @@ pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
 //
 // Device probing
 //
-pub fn probe_device(path: &PathBuf) -> ShakeResult<bool> {
+pub fn probe_device(path: &Path) -> ShakeResult<bool> {
     let file = match open_device(path) {
         Ok(f) => f,
         Err(_) => return Ok(false),
@@ -106,12 +107,11 @@ pub fn probe_device(path: &PathBuf) -> ShakeResult<bool> {
 //
 // Device opening
 //
-pub fn open_device(path: &PathBuf) -> ShakeResult<File> {
+pub fn open_device(path: &Path) -> ShakeResult<File> {
     let fd = fcntl::open(path, OFlag::O_RDWR | OFlag::O_NONBLOCK, Mode::empty())
         .map_err(|_| ShakeError::Device)?;
 
-    let file = unsafe { File::from_raw_fd(fd) };
-    Ok(file)
+    Ok(unsafe { File::from_raw_fd(fd) })
 }
 
 //

@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::effect::Effect;
@@ -157,6 +158,19 @@ impl Device {
         let id = self.upload(&effect)?;
         self.play(id)?;
         Ok(id)
+    }
+
+    pub fn open_path(path: &Path) -> ShakeResult<Device> {
+        let file = backend::open_device(path)?;
+        let info = backend::query_device(&file)?;
+        Ok(Device {
+            id: 0,
+            name: info.name,
+            capacity: info.capacity,
+            features: info.features,
+            file,
+            path: path.to_path_buf(),
+        })
     }
 }
 
