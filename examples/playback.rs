@@ -1,5 +1,5 @@
 use shake::device::Device;
-use shake::effect::{Effect, PeriodicEffect, PeriodicWaveform, Envelope};
+use shake::effect::{Effect, Envelope, PeriodicEffect, PeriodicWaveform};
 use shake::error::ShakeResult;
 use std::thread::sleep;
 use std::time::Duration;

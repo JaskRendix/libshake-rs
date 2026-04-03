@@ -1,14 +1,11 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use crate::error::{ShakeError, ShakeResult};
 use crate::effect::Effect;
+use crate::error::{ShakeError, ShakeResult};
 
 #[cfg(target_os = "linux")]
 use crate::linux as backend;
-
-#[cfg(target_os = "macos")]
-use crate::osx as backend;
 
 pub struct Device {
     id: u32,
@@ -34,12 +31,12 @@ impl Device {
     pub fn enumerate() -> ShakeResult<Vec<DeviceInfo>> {
         let mut devices = Vec::new();
         let entries = backend::scan_event_nodes()?;
-    
+
         for path in entries {
             if backend::probe_device(&path)? {
                 let file = backend::open_device(&path)?;
                 let info = backend::query_device(&file)?; // backend::DeviceInfo
-    
+
                 devices.push(DeviceInfo {
                     id: devices.len() as u32,
                     name: info.name,
@@ -49,7 +46,7 @@ impl Device {
                 });
             }
         }
-    
+
         Ok(devices)
     }
 
@@ -58,10 +55,11 @@ impl Device {
     //
     pub fn open(id: u32) -> ShakeResult<Device> {
         let infos = Device::enumerate()?;
-        let info = infos.into_iter()
+        let info = infos
+            .into_iter()
             .find(|d| d.id == id)
             .ok_or(ShakeError::Device)?;
-    
+
         Device::open_info(&info)
     }
 
@@ -142,4 +140,3 @@ impl std::fmt::Debug for Device {
             .finish()
     }
 }
-

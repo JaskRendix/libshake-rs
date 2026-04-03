@@ -2,37 +2,37 @@
 
 use std::fs;
 use std::fs::File;
-use std::os::fd::{AsRawFd, FromRawFd, BorrowedFd};
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd};
 use std::path::PathBuf;
 
 use nix::fcntl::{self, OFlag};
+use nix::libc;
 use nix::sys::stat::Mode;
 use nix::unistd;
-use nix::libc;
 
-use crate::error::{ShakeError, ShakeResult};
 use crate::effect::{
-    Effect, RumbleEffect, PeriodicEffect, ConstantEffect, RampEffect, Envelope, PeriodicWaveform,
+    ConstantEffect, Effect, Envelope, PeriodicEffect, PeriodicWaveform, RampEffect, RumbleEffect,
 };
+use crate::error::{ShakeError, ShakeResult};
 
 //
 // Linux FF constants
 //
 const EV_FF: u16 = 0x15;
 
-const FF_RUMBLE: u16   = 0x50;
+const FF_RUMBLE: u16 = 0x50;
 const FF_PERIODIC: u16 = 0x51;
 const FF_CONSTANT: u16 = 0x52;
-const FF_RAMP: u16     = 0x57;
+const FF_RAMP: u16 = 0x57;
 
-const FF_SQUARE: u16   = 0x58;
+const FF_SQUARE: u16 = 0x58;
 const FF_TRIANGLE: u16 = 0x59;
-const FF_SINE: u16     = 0x5A;
-const FF_SAW_UP: u16   = 0x5B;
+const FF_SINE: u16 = 0x5A;
+const FF_SAW_UP: u16 = 0x5B;
 const FF_SAW_DOWN: u16 = 0x5C;
-const FF_CUSTOM: u16   = 0x5D;
+const FF_CUSTOM: u16 = 0x5D;
 
-const FF_GAIN: u16       = 0x60;
+const FF_GAIN: u16 = 0x60;
 const FF_AUTOCENTER: u16 = 0x61;
 
 //
@@ -123,8 +123,7 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     // EVIOCGEFFECTS
     let mut effects: libc::c_int = 0;
     unsafe {
-        eviocgeffects(raw_fd, &mut effects as *mut libc::c_int)
-            .map_err(|_| ShakeError::Query)?;
+        eviocgeffects(raw_fd, &mut effects as *mut libc::c_int).map_err(|_| ShakeError::Query)?;
     }
 
     // EVIOCGNAME
@@ -133,7 +132,10 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
         eviocgname(raw_fd, &mut name_buf).map_err(|_| ShakeError::Query)?;
     }
     let name = String::from_utf8_lossy(
-        &name_buf[..name_buf.iter().position(|&b| b == 0).unwrap_or(name_buf.len())],
+        &name_buf[..name_buf
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(name_buf.len())],
     )
     .to_string();
 
@@ -273,8 +275,7 @@ pub fn upload_effect(fd: &File, effect: &Effect) -> ShakeResult<i32> {
     let mut ff = effect_to_ff(effect)?;
 
     unsafe {
-        eviocsff(raw_fd, &mut ff as *mut libc::ff_effect)
-            .map_err(|_| ShakeError::Transfer)?;
+        eviocsff(raw_fd, &mut ff as *mut libc::ff_effect).map_err(|_| ShakeError::Transfer)?;
     }
 
     Ok(ff.id as i32)

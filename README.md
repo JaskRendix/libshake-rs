@@ -10,13 +10,12 @@ The goal is to offer a clean, safe, and modern interface for rumble, periodic, c
 The library currently includes:
 
 - **Linux backend** using the `evdev` force‑feedback subsystem  
-- **macOS backend (stub)** — modern macOS versions no longer ship ForceFeedback.framework, so the backend compiles but reports `ShakeError::Support`  
 - A shared, platform‑agnostic `Device` API  
 - A rich `Effect` model supporting rumble, periodic, constant, and ramp effects, including envelopes and timing
 
 ## Origins
 
-The original libShake was written in C and provided Linux and macOS
+The original libShake was written in C and provided Linux
 force‑feedback support. This Rust version is a modern, safe rewrite
 inspired by that project, with a redesigned API and updated backend
 architecture.
@@ -34,13 +33,6 @@ cargo build --release
 ```
 
 The Linux backend uses `nix` + `libc` to access `/dev/input/event*` devices and supports all effect types.
-
-### macOS
-
-Modern macOS versions (11+) no longer include `ForceFeedback.framework`.  
-`build.rs` detects this and generates a stub `ffi.rs` so the crate compiles, but **force‑feedback is not available**.
-
-The macOS backend currently returns `ShakeError::Support` for all operations.
 
 ## Usage
 

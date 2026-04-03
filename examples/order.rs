@@ -1,7 +1,7 @@
-use shake::device::Device;
-use shake::effect::{Effect, PeriodicEffect, RumbleEffect, Envelope, PeriodicWaveform};
-use shake::error::ShakeResult;
 use rand::seq::SliceRandom;
+use shake::device::Device;
+use shake::effect::{Effect, Envelope, PeriodicEffect, PeriodicWaveform, RumbleEffect};
+use shake::error::ShakeResult;
 use std::thread::sleep;
 use std::time::Duration;
 

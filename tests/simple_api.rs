@@ -1,5 +1,5 @@
-use shake::simple::*;
 use shake::effect::*;
+use shake::simple::*;
 
 #[test]
 fn simple_rumble_creates_rumble_effect() {

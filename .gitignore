@@ -13,8 +13,5 @@ Cargo.lock
 *.swp
 *.swo
 
-# macOS junk
-.DS_Store
-
 # Rust toolchain info
 .rustc_info.json

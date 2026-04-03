@@ -1,5 +1,5 @@
 use shake::device::Device;
-use shake::effect::{Effect, PeriodicEffect, Envelope, PeriodicWaveform};
+use shake::effect::{Effect, Envelope, PeriodicEffect, PeriodicWaveform};
 use shake::error::ShakeResult;
 use std::thread::sleep;
 use std::time::Duration;
@@ -9,7 +9,7 @@ fn main() -> ShakeResult<()> {
 
     let effect = Effect::Periodic(PeriodicEffect {
         waveform: PeriodicWaveform::Sine,
-        period: 100,        // milliseconds
+        period: 100, // milliseconds
         magnitude: 0x6000,
         offset: 0,
         phase: 0,
@@ -19,7 +19,7 @@ fn main() -> ShakeResult<()> {
             fade_length: 10,
             fade_level: 0,
         },
-        duration: 2000,     // milliseconds
+        duration: 2000, // milliseconds
         delay: 0,
     });
 
