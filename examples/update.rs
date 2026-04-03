@@ -23,14 +23,17 @@ fn main() -> ShakeResult<()> {
         delay: 0,
     };
 
-    let mut id = device.upload(&Effect::Periodic(effect.clone()))?;
+    // no clone needed
+    let mut id = device.upload(&Effect::Periodic(effect))?;
 
     println!("Original");
     device.play(id)?;
     sleep(Duration::from_secs(2));
 
     effect.magnitude = 0x6000;
-    id = device.upload(&Effect::Periodic(effect.clone()))?;
+
+    // still no clone needed
+    id = device.upload(&Effect::Periodic(effect))?;
 
     println!("Updated");
     device.play(id)?;

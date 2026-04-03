@@ -8,8 +8,8 @@ fn periodic_magnitude_respects_min_and_max() {
     let e = simple_periodic(PeriodicWaveform::Sine, 2.0, 0.0, 0.0, 0.0);
     match e {
         Effect::Periodic(p) => {
-            assert!(p.magnitude <= PERIODIC_MAGNITUDE_MAX);
-            assert!(p.magnitude >= PERIODIC_MAGNITUDE_MIN);
+            // 2.0 should clamp to the library's defined max magnitude
+            assert_eq!(p.magnitude, PERIODIC_MAGNITUDE_MAX);
         }
         _ => panic!("Expected Periodic effect"),
     }
@@ -20,8 +20,8 @@ fn constant_level_respects_min_and_max() {
     let e = simple_constant(-2.0, 0.0, 0.0, 0.0);
     match e {
         Effect::Constant(c) => {
-            assert!(c.level <= CONSTANT_LEVEL_MAX);
-            assert!(c.level >= CONSTANT_LEVEL_MIN);
+            // -2.0 should clamp to the defined min level
+            assert_eq!(c.level, CONSTANT_LEVEL_MIN);
         }
         _ => panic!("Expected Constant effect"),
     }
@@ -32,10 +32,8 @@ fn ramp_levels_respect_boundaries() {
     let e = simple_ramp(-2.0, 2.0, 0.0, 0.0, 0.0);
     match e {
         Effect::Ramp(r) => {
-            assert!(r.start_level >= RAMP_START_LEVEL_MIN);
-            assert!(r.start_level <= RAMP_START_LEVEL_MAX);
-            assert!(r.end_level >= RAMP_END_LEVEL_MIN);
-            assert!(r.end_level <= RAMP_END_LEVEL_MAX);
+            assert_eq!(r.start_level, RAMP_START_LEVEL_MIN);
+            assert_eq!(r.end_level, RAMP_END_LEVEL_MAX);
         }
         _ => panic!("Expected Ramp effect"),
     }
@@ -79,8 +77,7 @@ fn negative_force_is_clamped_or_preserved() {
     let e = simple_constant(-1.0, 0.0, 0.0, 0.0);
     match e {
         Effect::Constant(c) => {
-            assert!(c.level <= 0);
-            assert!(c.level >= CONSTANT_LEVEL_MIN);
+            assert_eq!(c.level, CONSTANT_LEVEL_MIN + 1);
         }
         _ => panic!("Expected Constant effect"),
     }
@@ -91,8 +88,8 @@ fn extremely_large_force_does_not_overflow() {
     let e = simple_rumble(1000.0, 1000.0, 1.0);
     match e {
         Effect::Rumble(r) => {
-            assert!(r.strong_magnitude <= RUMBLE_STRONG_MAGNITUDE_MAX);
-            assert!(r.weak_magnitude <= RUMBLE_WEAK_MAGNITUDE_MAX);
+            assert_eq!(r.strong_magnitude, RUMBLE_STRONG_MAGNITUDE_MAX);
+            assert_eq!(r.weak_magnitude, RUMBLE_WEAK_MAGNITUDE_MAX);
         }
         _ => panic!("Expected Rumble effect"),
     }
@@ -106,8 +103,9 @@ fn repeated_effect_construction_is_stable() {
         let e = simple_periodic(PeriodicWaveform::Sine, 0.5, 0.1, 0.1, 0.1);
         match e {
             Effect::Periodic(p) => {
-                assert!(p.magnitude <= PERIODIC_MAGNITUDE_MAX);
-                assert!(p.magnitude >= PERIODIC_MAGNITUDE_MIN);
+                // 0.5 should map to a known scaled magnitude
+                assert!(p.magnitude > 0);
+                assert!(p.magnitude < PERIODIC_MAGNITUDE_MAX);
             }
             _ => panic!("Expected Periodic effect"),
         }
