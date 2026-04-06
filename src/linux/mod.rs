@@ -51,18 +51,15 @@ nix::ioctl_read_buf!(eviocgbit_ff, b'E', 0x20 + EV_FF as u8, u8);
 nix::ioctl_write_ptr!(eviocsff, b'E', 0x80, libc::ff_effect);
 nix::ioctl_write_int!(eviocrmff, b'E', 0x81);
 
-// /dev/input scanning
-const SHAKE_DIR_NODES: &str = "/dev/input";
-
-pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
+fn scan_event_nodes_in(dir: &Path) -> ShakeResult<Vec<PathBuf>> {
     let mut nodes = Vec::new();
 
-    let entries = fs::read_dir(SHAKE_DIR_NODES).map_err(|_| ShakeError::Device)?;
+    let entries = fs::read_dir(dir).map_err(|_| ShakeError::Device)?;
 
     for entry in entries {
         let entry = entry.map_err(|_| ShakeError::Device)?;
-        let file_name = entry.file_name();
-        let name = match file_name.to_str() {
+        let name = entry.file_name();
+        let name = match name.to_str() {
             Some(s) => s,
             None => continue,
         };
@@ -77,6 +74,10 @@ pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
     }
 
     Ok(nodes)
+}
+
+pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
+    scan_event_nodes_in(Path::new("/dev/input"))
 }
 
 // Device probing
@@ -307,4 +308,239 @@ pub fn set_gain(fd: &File, gain: u16) -> ShakeResult<()> {
 
 pub fn set_autocenter(fd: &File, value: u16) -> ShakeResult<()> {
     send_ff_event(fd, FF_AUTOCENTER, value as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+    use std::fs::File;
+    use std::os::unix::ffi::OsStringExt;
+    use tempfile::tempdir;
+
+    use crate::effect::{Envelope, PeriodicWaveform};
+
+    #[test]
+    fn scan_event_nodes_in_finds_event_files() {
+        let dir = tempdir().unwrap();
+        let path = dir.path();
+
+        File::create(path.join("event0")).unwrap();
+        File::create(path.join("event1")).unwrap();
+        File::create(path.join("not_event")).unwrap();
+
+        let nodes = scan_event_nodes_in(path).unwrap();
+
+        assert_eq!(nodes.len(), 2);
+        assert!(nodes.iter().any(|p| p.ends_with("event0")));
+        assert!(nodes.iter().any(|p| p.ends_with("event1")));
+    }
+
+    #[test]
+    fn scan_event_nodes_in_returns_error_when_empty() {
+        let dir = tempdir().unwrap();
+        let path = dir.path();
+
+        let result = scan_event_nodes_in(path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn scan_event_nodes_in_ignores_non_utf8_filenames() {
+        let dir = tempdir().unwrap();
+        let path = dir.path();
+
+        let bad_name = OsString::from_vec(vec![0xFF, 0xFE, 0xFD]);
+        File::create(path.join(bad_name)).unwrap();
+
+        let result = scan_event_nodes_in(path);
+        assert!(result.is_err());
+    }
+
+    fn dummy_envelope() -> Envelope {
+        Envelope {
+            attack_length: 10,
+            attack_level: 20,
+            fade_length: 30,
+            fade_level: 40,
+        }
+    }
+
+    #[test]
+    fn rumble_to_ff_converts_correctly() {
+        let r = RumbleEffect {
+            strong_magnitude: 1234,
+            weak_magnitude: 5678,
+            duration: 1000,
+            delay: 50,
+            direction: 0,
+        };
+
+        let ff = rumble_to_ff(&r);
+
+        assert_eq!(ff.type_, FF_RUMBLE);
+        unsafe {
+            let rumble =
+                ff.u.as_ptr()
+                    .cast::<libc::ff_rumble_effect>()
+                    .as_ref()
+                    .unwrap();
+            assert_eq!(rumble.strong_magnitude, 1234);
+            assert_eq!(rumble.weak_magnitude, 5678);
+        }
+        assert_eq!(ff.replay.length, 1000);
+        assert_eq!(ff.replay.delay, 50);
+        assert_eq!(ff.direction, 0);
+        assert_eq!(ff.id, -1);
+    }
+
+    #[test]
+    fn periodic_to_ff_converts_correctly() {
+        let p = PeriodicEffect {
+            waveform: PeriodicWaveform::Sine,
+            period: 200,
+            magnitude: 3000,
+            offset: -100,
+            phase: 90,
+            envelope: dummy_envelope(),
+            duration: 500,
+            delay: 10,
+            direction: 0,
+        };
+
+        let ff = periodic_to_ff(&p);
+
+        assert_eq!(ff.type_, FF_PERIODIC);
+        unsafe {
+            let per =
+                ff.u.as_ptr()
+                    .cast::<libc::ff_periodic_effect>()
+                    .as_ref()
+                    .unwrap();
+            assert_eq!(per.waveform, FF_SINE);
+            assert_eq!(per.period, 200);
+            assert_eq!(per.magnitude, 3000);
+            assert_eq!(per.offset, -100);
+            assert_eq!(per.phase, 90);
+
+            assert_eq!(per.envelope.attack_length, 10);
+            assert_eq!(per.envelope.attack_level, 20);
+            assert_eq!(per.envelope.fade_length, 30);
+            assert_eq!(per.envelope.fade_level, 40);
+        }
+        assert_eq!(ff.replay.length, 500);
+        assert_eq!(ff.replay.delay, 10);
+    }
+
+    #[test]
+    fn constant_to_ff_converts_correctly() {
+        let c = ConstantEffect {
+            level: -2000,
+            envelope: dummy_envelope(),
+            duration: 700,
+            delay: 20,
+            direction: 0,
+        };
+
+        let ff = constant_to_ff(&c);
+
+        assert_eq!(ff.type_, FF_CONSTANT);
+        unsafe {
+            let ce =
+                ff.u.as_ptr()
+                    .cast::<libc::ff_constant_effect>()
+                    .as_ref()
+                    .unwrap();
+            assert_eq!(ce.level, -2000);
+            assert_eq!(ce.envelope.attack_length, 10);
+            assert_eq!(ce.envelope.attack_level, 20);
+            assert_eq!(ce.envelope.fade_length, 30);
+            assert_eq!(ce.envelope.fade_level, 40);
+        }
+        assert_eq!(ff.replay.length, 700);
+        assert_eq!(ff.replay.delay, 20);
+    }
+
+    #[test]
+    fn ramp_to_ff_converts_correctly() {
+        let r = RampEffect {
+            start_level: -5000,
+            end_level: 5000,
+            envelope: dummy_envelope(),
+            duration: 900,
+            delay: 30,
+            direction: 0,
+        };
+
+        let ff = ramp_to_ff(&r);
+
+        assert_eq!(ff.type_, FF_RAMP);
+        unsafe {
+            let re =
+                ff.u.as_ptr()
+                    .cast::<libc::ff_ramp_effect>()
+                    .as_ref()
+                    .unwrap();
+            assert_eq!(re.start_level, -5000);
+            assert_eq!(re.end_level, 5000);
+            assert_eq!(re.envelope.attack_length, 10);
+            assert_eq!(re.envelope.attack_level, 20);
+            assert_eq!(re.envelope.fade_length, 30);
+            assert_eq!(re.envelope.fade_level, 40);
+        }
+        assert_eq!(ff.replay.length, 900);
+        assert_eq!(ff.replay.delay, 30);
+    }
+
+    #[test]
+    fn effect_to_ff_dispatches_correctly() {
+        let rumble = Effect::Rumble(RumbleEffect {
+            strong_magnitude: 1,
+            weak_magnitude: 2,
+            duration: 3,
+            delay: 4,
+            direction: 0,
+        });
+
+        let ff = effect_to_ff(&rumble).unwrap();
+        assert_eq!(ff.type_, FF_RUMBLE);
+
+        let periodic = Effect::Periodic(PeriodicEffect {
+            waveform: PeriodicWaveform::Triangle,
+            period: 10,
+            magnitude: 20,
+            offset: 30,
+            phase: 40,
+            envelope: dummy_envelope(),
+            duration: 50,
+            delay: 60,
+            direction: 0,
+        });
+
+        let ff = effect_to_ff(&periodic).unwrap();
+        assert_eq!(ff.type_, FF_PERIODIC);
+
+        let constant = Effect::Constant(ConstantEffect {
+            level: 100,
+            envelope: dummy_envelope(),
+            duration: 200,
+            delay: 300,
+            direction: 0,
+        });
+
+        let ff = effect_to_ff(&constant).unwrap();
+        assert_eq!(ff.type_, FF_CONSTANT);
+
+        let ramp = Effect::Ramp(RampEffect {
+            start_level: -1,
+            end_level: 1,
+            envelope: dummy_envelope(),
+            duration: 10,
+            delay: 20,
+            direction: 0,
+        });
+
+        let ff = effect_to_ff(&ramp).unwrap();
+        assert_eq!(ff.type_, FF_RAMP);
+    }
 }

@@ -9,6 +9,7 @@ lazy_static = "1.4"
 nix = { version = "0.28", features = ["fs", "ioctl"] }
 
 [dev-dependencies]
+tempfile = "3"
 rand = "0.8"
 
 [features]
