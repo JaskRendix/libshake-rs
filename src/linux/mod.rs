@@ -16,9 +16,7 @@ use crate::effect::{
 };
 use crate::error::{ShakeError, ShakeResult};
 
-//
 // Linux FF constants
-//
 const EV_FF: u16 = 0x15;
 
 pub const FF_RUMBLE: u16 = 0x50;
@@ -36,18 +34,14 @@ const FF_CUSTOM: u16 = 0x5D;
 const FF_GAIN: u16 = 0x60;
 const FF_AUTOCENTER: u16 = 0x61;
 
-//
 // Public struct returned to device.rs
-//
 pub struct DeviceInfo {
     pub name: String,
     pub capacity: u32,
     pub features: Vec<u64>,
 }
 
-//
 // ioctl definitions
-//
 const EVIOCGNAME_LEN: usize = 256;
 const EVIOCGBIT_EV_FF_LEN: usize = 16;
 
@@ -57,9 +51,7 @@ nix::ioctl_read_buf!(eviocgbit_ff, b'E', 0x20 + EV_FF as u8, u8);
 nix::ioctl_write_ptr!(eviocsff, b'E', 0x80, libc::ff_effect);
 nix::ioctl_write_int!(eviocrmff, b'E', 0x81);
 
-//
 // /dev/input scanning
-//
 const SHAKE_DIR_NODES: &str = "/dev/input";
 
 pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
@@ -87,9 +79,7 @@ pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
     Ok(nodes)
 }
 
-//
 // Device probing
-//
 pub fn probe_device(path: &Path) -> ShakeResult<bool> {
     let file = match open_device(path) {
         Ok(f) => f,
@@ -104,9 +94,7 @@ pub fn probe_device(path: &Path) -> ShakeResult<bool> {
     Ok(info.capacity > 0)
 }
 
-//
 // Device opening
-//
 pub fn open_device(path: &Path) -> ShakeResult<File> {
     let fd = fcntl::open(path, OFlag::O_RDWR | OFlag::O_NONBLOCK, Mode::empty())
         .map_err(|_| ShakeError::Device)?;
@@ -114,9 +102,7 @@ pub fn open_device(path: &Path) -> ShakeResult<File> {
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
-//
 // Query device capabilities
-//
 pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     let raw_fd = fd.as_raw_fd();
 
@@ -161,9 +147,7 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     })
 }
 
-//
 // Effect conversion helpers
-//
 fn fill_replay(ff: &mut libc::ff_effect, duration: u16, delay: u16) {
     ff.replay.length = duration;
     ff.replay.delay = delay;
@@ -267,9 +251,7 @@ fn effect_to_ff(effect: &Effect) -> ShakeResult<libc::ff_effect> {
     }
 }
 
-//
 // Effect operations
-//
 pub fn upload_effect(fd: &File, effect: &Effect) -> ShakeResult<i32> {
     let raw_fd = fd.as_raw_fd();
     let mut ff = effect_to_ff(effect)?;
