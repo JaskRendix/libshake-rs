@@ -2,11 +2,12 @@ use rand::seq::SliceRandom;
 use shake::device::Device;
 use shake::effect::{Effect, Envelope, PeriodicEffect, PeriodicWaveform, RumbleEffect};
 use shake::error::ShakeResult;
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
 fn main() -> ShakeResult<()> {
-    let device = Device::open(0)?;
+    let device: Arc<Device> = Device::open(0)?;
 
     let effects = vec![
         Effect::Periodic(PeriodicEffect {
@@ -15,14 +16,10 @@ fn main() -> ShakeResult<()> {
             magnitude: 0x5000,
             offset: 0,
             phase: 0,
-            envelope: Envelope {
-                attack_length: 0,
-                attack_level: 0,
-                fade_length: 0,
-                fade_level: 0,
-            },
+            envelope: Envelope::new(0, 0, 0, 0),
             duration: 1000,
             delay: 0,
+            direction: 0,
         }),
         Effect::Periodic(PeriodicEffect {
             waveform: PeriodicWaveform::Square,
@@ -30,32 +27,30 @@ fn main() -> ShakeResult<()> {
             magnitude: 0x5000,
             offset: 0,
             phase: 0,
-            envelope: Envelope {
-                attack_length: 0,
-                attack_level: 0,
-                fade_length: 0,
-                fade_level: 0,
-            },
+            envelope: Envelope::new(0, 0, 0, 0),
             duration: 1000,
             delay: 0,
+            direction: 0,
         }),
         Effect::Rumble(RumbleEffect {
             strong_magnitude: 0x6000,
             weak_magnitude: 0x6000,
             duration: 1000,
             delay: 0,
+            direction: 0,
         }),
         Effect::Rumble(RumbleEffect {
             strong_magnitude: 0x5000,
             weak_magnitude: 0x5000,
             duration: 1000,
             delay: 0,
+            direction: 0,
         }),
     ];
 
-    let mut ids = Vec::new();
+    let mut handles = Vec::new();
     for e in &effects {
-        ids.push(device.upload(e)?);
+        handles.push(device.upload(e)?);
     }
 
     let mut order = vec![0, 1, 2, 3];
@@ -63,13 +58,11 @@ fn main() -> ShakeResult<()> {
 
     for idx in order {
         println!("Effect #{}", idx);
-        device.play(ids[idx])?;
+        handles[idx].play()?;
         sleep(Duration::from_secs(1));
     }
 
-    for id in ids {
-        device.erase(id)?;
-    }
+    drop(handles);
 
     Ok(())
 }

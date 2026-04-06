@@ -67,6 +67,7 @@ impl Envelope {
 pub struct RumbleEffect {
     pub strong_magnitude: u16,
     pub weak_magnitude: u16,
+    pub direction: u16, // 0..=0xFFFF (Linux FF units)
     pub duration: u16,
     pub delay: u16,
 }
@@ -81,6 +82,7 @@ pub struct PeriodicEffect {
     pub envelope: Envelope,
     pub duration: u16,
     pub delay: u16,
+    pub direction: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -89,6 +91,7 @@ pub struct ConstantEffect {
     pub envelope: Envelope,
     pub duration: u16,
     pub delay: u16,
+    pub direction: u16,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -98,6 +101,7 @@ pub struct RampEffect {
     pub envelope: Envelope,
     pub duration: u16,
     pub delay: u16,
+    pub direction: u16,
 }
 
 #[derive(Debug, Clone)]

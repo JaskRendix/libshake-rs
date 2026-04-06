@@ -1,14 +1,15 @@
 use shake::device::Device;
 use shake::effect::{Effect, Envelope, PeriodicEffect, PeriodicWaveform};
 use shake::error::ShakeResult;
+use std::sync::Arc;
 
 fn main() -> ShakeResult<()> {
-    let device = Device::open(0)?;
+    let device: Arc<Device> = Device::open(0)?;
     let capacity = device.capacity();
 
     println!("Reported capacity: {}", capacity);
 
-    let mut ids = Vec::new();
+    let mut handles = Vec::new();
 
     for i in 0..capacity {
         let effect = Effect::Periodic(PeriodicEffect {
@@ -17,24 +18,18 @@ fn main() -> ShakeResult<()> {
             magnitude: 0x4000,
             offset: 0,
             phase: 0,
-            envelope: Envelope {
-                attack_length: 0,
-                attack_level: 0,
-                fade_length: 0,
-                fade_level: 0,
-            },
+            envelope: Envelope::new(0, 0, 0, 0),
             duration: 1000, // ms
             delay: 0,
+            direction: 0,
         });
 
-        let id = device.upload(&effect)?;
-        println!("Uploaded {} as {}", i, id);
-        ids.push(id);
+        let handle = device.upload(&effect)?;
+        println!("Uploaded {} as effect #{}", i, handle.id());
+        handles.push(handle);
     }
 
-    for id in ids {
-        device.erase(id)?;
-    }
+    drop(handles);
 
     Ok(())
 }

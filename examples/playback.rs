@@ -1,11 +1,12 @@
 use shake::device::Device;
 use shake::effect::{Effect, Envelope, PeriodicEffect, PeriodicWaveform};
 use shake::error::ShakeResult;
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
 fn main() -> ShakeResult<()> {
-    let device = Device::open(0)?;
+    let device: Arc<Device> = Device::open(0)?;
 
     let effect = Effect::Periodic(PeriodicEffect {
         waveform: PeriodicWaveform::Sine,
@@ -13,30 +14,27 @@ fn main() -> ShakeResult<()> {
         magnitude: 0x6000,
         offset: 0,
         phase: 0,
-        envelope: Envelope {
-            attack_length: 0,
-            attack_level: 0,
-            fade_length: 0,
-            fade_level: 0,
-        },
+        envelope: Envelope::new(0, 0, 0, 0),
         duration: 2000,
         delay: 0,
+        direction: 0,
     });
 
-    let id = device.upload(&effect)?;
+    let handle = device.upload(&effect)?;
 
     println!("Playing (2 sec)");
-    device.play(id)?;
+    handle.play()?;
     sleep(Duration::from_secs(1));
 
     println!("Stopping (at 1 sec)");
-    device.stop(id)?;
+    handle.stop()?;
     sleep(Duration::from_secs(1));
 
     println!("Replaying (2 sec)");
-    device.play(id)?;
+    handle.play()?;
     sleep(Duration::from_secs(2));
 
-    device.erase(id)?;
+    drop(handle);
+
     Ok(())
 }

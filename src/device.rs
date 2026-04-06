@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::effect::Effect;
 use crate::error::{ShakeError, ShakeResult};
@@ -15,6 +16,35 @@ use crate::linux::{FF_PERIODIC, FF_RUMBLE};
 
 #[cfg(feature = "mock-backend")]
 use crate::mock as backend;
+
+pub struct EffectHandle {
+    id: i32,
+    device: Arc<Device>,
+}
+
+impl EffectHandle {
+    pub fn new(id: i32, device: Arc<Device>) -> Self {
+        Self { id, device }
+    }
+
+    pub fn play(&self) -> ShakeResult<()> {
+        self.device.play(self.id)
+    }
+
+    pub fn stop(&self) -> ShakeResult<()> {
+        self.device.stop(self.id)
+    }
+
+    pub fn id(&self) -> i32 {
+        self.id
+    }
+}
+
+impl Drop for EffectHandle {
+    fn drop(&mut self) {
+        let _ = self.device.erase(self.id);
+    }
+}
 
 pub struct Device {
     id: u32,
@@ -56,7 +86,7 @@ impl Device {
         Ok(devices)
     }
 
-    pub fn open(id: u32) -> ShakeResult<Device> {
+    pub fn open(id: u32) -> ShakeResult<Arc<Device>> {
         let infos = Device::enumerate()?;
         let info = infos
             .into_iter()
@@ -66,16 +96,29 @@ impl Device {
         Device::open_info(&info)
     }
 
-    pub fn open_info(info: &DeviceInfo) -> ShakeResult<Device> {
+    pub fn open_info(info: &DeviceInfo) -> ShakeResult<Arc<Device>> {
         let file = backend::open_device(&info.path)?;
-        Ok(Device {
+        Ok(Arc::new(Device {
             id: info.id,
             name: info.name.clone(),
             capacity: info.capacity,
             features: info.features.clone(),
             file,
             path: info.path.clone(),
-        })
+        }))
+    }
+
+    pub fn open_path(path: &Path) -> ShakeResult<Arc<Device>> {
+        let file = backend::open_device(path)?;
+        let info = backend::query_device(&file)?;
+        Ok(Arc::new(Device {
+            id: 0,
+            name: info.name,
+            capacity: info.capacity,
+            features: info.features,
+            file,
+            path: path.to_path_buf(),
+        }))
     }
 
     pub fn id(&self) -> u32 {
@@ -98,8 +141,10 @@ impl Device {
         &self.path
     }
 
-    pub fn upload(&self, effect: &Effect) -> ShakeResult<i32> {
-        backend::upload_effect(&self.file, effect)
+    /// Upload an effect and get an RAII handle.
+    pub fn upload(self: &Arc<Self>, effect: &Effect) -> ShakeResult<EffectHandle> {
+        let id = backend::upload_effect(&self.file, effect)?;
+        Ok(EffectHandle::new(id, Arc::clone(self)))
     }
 
     pub fn erase(&self, id: i32) -> ShakeResult<()> {
@@ -153,24 +198,27 @@ impl Device {
         true
     }
 
-    pub fn rumble(&self, strong: f32, weak: f32, secs: f32) -> ShakeResult<i32> {
+    /// Simple rumble helper returning an RAII handle.
+    pub fn rumble(
+        self: &Arc<Self>,
+        strong: f32,
+        weak: f32,
+        secs: f32,
+    ) -> ShakeResult<EffectHandle> {
         let effect = simple_rumble(strong, weak, secs);
-        let id = self.upload(&effect)?;
-        self.play(id)?;
-        Ok(id)
+        self.upload(&effect)
     }
 
-    pub fn open_path(path: &Path) -> ShakeResult<Device> {
-        let file = backend::open_device(path)?;
-        let info = backend::query_device(&file)?;
-        Ok(Device {
-            id: 0,
-            name: info.name,
-            capacity: info.capacity,
-            features: info.features,
-            file,
-            path: path.to_path_buf(),
-        })
+    /// Directional rumble helper (degrees 0–360).
+    pub fn rumble_dir(
+        self: &Arc<Self>,
+        strong: f32,
+        weak: f32,
+        secs: f32,
+        direction_deg: f32,
+    ) -> ShakeResult<EffectHandle> {
+        let effect = simple_rumble_dir(strong, weak, secs, direction_deg);
+        self.upload(&effect)
     }
 }
 

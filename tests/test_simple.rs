@@ -12,11 +12,11 @@ fn simple_rumble_creates_rumble_effect() {
 
 #[test]
 fn simple_rumble_clamps_values() {
-    let e = simple_rumble(2.0, -1.0, 1.0); // out of range
+    let e = simple_rumble(2.0, -1.0, 1.0);
     match e {
         Effect::Rumble(r) => {
             assert_eq!(r.strong_magnitude, 0x7FFF);
-            assert_eq!(r.weak_magnitude, 0); // clamped
+            assert_eq!(r.weak_magnitude, 0);
         }
         _ => panic!("Expected Rumble effect"),
     }
@@ -125,4 +125,45 @@ fn simple_ramp_sets_envelope_and_duration() {
         }
         _ => panic!("Expected Ramp effect"),
     }
+}
+
+#[test]
+fn simple_rumble_dir_sets_direction_correctly() {
+    let e = simple_rumble_dir(1.0, 1.0, 1.0, 180.0);
+    match e {
+        Effect::Rumble(r) => assert_eq!(r.direction, 32767), // 180° = half of 65535
+        _ => panic!("Expected Rumble effect"),
+    }
+}
+
+#[test]
+fn simple_rumble_dir_wraps_negative_angles() {
+    let e = simple_rumble_dir(1.0, 1.0, 1.0, -90.0);
+    match e {
+        Effect::Rumble(r) => assert_eq!(r.direction, (270.0 / 360.0 * 65535.0) as u16),
+        _ => panic!("Expected Rumble effect"),
+    }
+}
+
+#[cfg(feature = "mock-backend")]
+#[test]
+fn raii_handle_erases_effect_on_drop() {
+    use shake::device::Device;
+    use shake::simple::*;
+
+    let list = Device::enumerate().unwrap();
+    let info = list.first().unwrap();
+    let dev = Device::open_info(info).unwrap();
+
+    let effect = simple_rumble(1.0, 0.5, 0.2);
+
+    let handle = dev.upload(&effect).unwrap();
+    let id = handle.id();
+
+    // Drop the handle → should erase automatically
+    drop(handle);
+
+    // Uploading again should reuse the same ID (mock backend behavior)
+    let handle2 = dev.upload(&effect).unwrap();
+    assert_eq!(handle2.id(), id);
 }

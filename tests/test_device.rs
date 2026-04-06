@@ -56,7 +56,6 @@ fn capability_checks_do_not_panic() {
     if let Some(info) = list.first() {
         let dev = Device::open_info(info).unwrap();
 
-        // These should never panic regardless of device support
         let _ = dev.supports_rumble();
         let _ = dev.supports_periodic();
     }
@@ -70,18 +69,17 @@ mod mock_tests {
     #[test]
     fn mock_upload_play_stop_erase_cycle() {
         let list = Device::enumerate().unwrap();
-        let info = list
-            .first()
-            .expect("mock backend should provide at least one device");
+        let info = list.first().unwrap();
 
         let dev = Device::open_info(info).unwrap();
 
         let effect = simple_rumble(1.0, 0.5, 0.2);
-        let id = dev.upload(&effect).expect("upload failed");
+        let handle = dev.upload(&effect).expect("upload failed");
 
-        dev.play(id).expect("play failed");
-        dev.stop(id).expect("stop failed");
-        dev.erase(id).expect("erase failed");
+        handle.play().expect("play failed");
+        handle.stop().expect("stop failed");
+
+        drop(handle); // RAII erase
     }
 
     #[test]
@@ -90,8 +88,8 @@ mod mock_tests {
         let info = list.first().unwrap();
         let dev = Device::open_info(info).unwrap();
 
-        let id = dev.rumble(1.0, 0.5, 0.1).expect("rumble failed");
-        assert!(id >= 0);
+        let handle = dev.rumble(1.0, 0.5, 0.1).expect("rumble failed");
+        assert!(handle.id() >= 0);
     }
 
     #[test]
@@ -99,10 +97,10 @@ mod mock_tests {
         let list = Device::enumerate().unwrap();
         let info = list.first().unwrap();
 
-        let dev = Device::open_info(info).unwrap();
+        let dev1 = Device::open_info(info).unwrap();
         let dev2 = Device::open_info(info).unwrap();
 
-        assert_eq!(dev.name(), dev2.name());
+        assert_eq!(dev1.name(), dev2.name());
     }
 }
 
@@ -111,7 +109,7 @@ fn open_path_opens_same_device() {
     let list = Device::enumerate().unwrap();
     let info = match list.first() {
         Some(i) => i,
-        None => return, // no devices available
+        None => return,
     };
 
     let dev1 = Device::open_info(info).unwrap();
@@ -146,4 +144,22 @@ fn deviceinfo_path_is_preserved() {
         let dev = Device::open_info(info).unwrap();
         assert_eq!(dev.path(), info.path.as_path());
     }
+}
+
+#[cfg(feature = "mock-backend")]
+#[test]
+fn mock_upload_play_stop_cycle() {
+    use shake::simple::*;
+
+    let list = Device::enumerate().unwrap();
+    let info = list.first().unwrap();
+    let dev = Device::open_info(info).unwrap();
+
+    let effect = simple_rumble(1.0, 0.5, 0.2);
+    let handle = dev.upload(&effect).unwrap();
+
+    handle.play().unwrap();
+    handle.stop().unwrap();
+
+    drop(handle);
 }
