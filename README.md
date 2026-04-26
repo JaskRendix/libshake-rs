@@ -17,15 +17,16 @@ Two backends are included:
   Uses the evdev force‑feedback subsystem (`/dev/input/event*`).
 
 - **Mock backend**  
-  A fully simulated device for development, testing, visualization, and profiling.
+  A fully simulated device for development, testing, visualization, and CI.
 
 ### **Unified Device API**
 The `Device` type provides:
 
-- Enumeration and capability checks  
-- Upload, play, stop, erase  
+- Enumeration with stable IDs  
+- Capability reporting (`DeviceCapabilities`)  
+- Upload, update, play, stop, erase  
 - Gain and autocenter control  
-- Stable effect handles  
+- Stable effect handles (RAII erase)  
 - Path‑based and ID‑based opening  
 - Backend‑independent behavior
 
@@ -80,9 +81,7 @@ shake = { path = "path/to/libshake" }
 ```
 
 ### **Linux backend**
-The Linux backend is enabled by default and uses `nix` + `libc` to access evdev.
-
-Build normally:
+Enabled by default. Uses `nix` + `libc` to access evdev.
 
 ```sh
 cargo build --release
@@ -99,7 +98,7 @@ use shake::device::Device;
 
 let devices = Device::enumerate()?;
 for info in devices {
-    println!("{}: {}", info.id(), info.name());
+    println!("{}: {}", info.id, info.name);
 }
 ```
 
@@ -111,7 +110,7 @@ use shake::effect::{Effect, RumbleEffect};
 
 let dev = Device::open(0)?;
 
-let id = dev.upload(&Effect::Rumble(RumbleEffect {
+let handle = dev.upload(&Effect::Rumble(RumbleEffect {
     strong_magnitude: 0x4000,
     weak_magnitude: 0x2000,
     duration: 1000,
@@ -119,7 +118,7 @@ let id = dev.upload(&Effect::Rumble(RumbleEffect {
     direction: 0,
 }))?;
 
-dev.play(id)?;
+handle.play()?;
 ```
 
 ### **Using the simple API**
@@ -145,9 +144,13 @@ pub trait Backend {
 
     fn scan() -> ShakeResult<Vec<PathBuf>>;
     fn open(path: &Path) -> ShakeResult<Self::Handle>;
+    fn close(handle: Self::Handle);
+
     fn query(handle: &Self::Handle) -> ShakeResult<RawDeviceInfo>;
+    fn capabilities(handle: &Self::Handle) -> ShakeResult<DeviceCapabilities>;
 
     fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32>;
+    fn update(handle: &Self::Handle, id: i32, effect: &Effect) -> ShakeResult<()>;
     fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()>;
     fn stop(handle: &Self::Handle, id: i32) -> ShakeResult<()>;
     fn erase(handle: &Self::Handle, id: i32) -> ShakeResult<()>;
@@ -157,7 +160,12 @@ pub trait Backend {
 }
 ```
 
-The `Device` type wraps this trait and provides a stable, ergonomic API.
+### **Metadata flow**
+
+- **RawDeviceInfo** — backend‑observed fields (name, capacity, feature bits)  
+- **DeviceCapabilities** — backend‑agnostic capability model  
+- **DeviceInfo** — normalized public metadata (stable ID, max_effects, raw_features, path)  
+- **Device** — wraps backend handle + cached capabilities
 
 Backends included:
 
@@ -170,14 +178,14 @@ Backends included:
 
 The test suite covers:
 
-- Backend trait contract (via an in‑test fake backend)  
+- Backend trait contract  
 - Mock backend behavior  
 - Linux event‑node scanning  
 - Effect‑to‑ff conversion  
 - ConditionEffect conversion  
 - Simple API helpers  
-- Edge cases and clamping  
 - Device enumeration, opening, and effect lifecycle  
+- Capability reporting  
 
 All tests run without hardware:
 
@@ -185,7 +193,7 @@ All tests run without hardware:
 cargo test
 ```
 
-The mock backend and fake backend ensure deterministic CI behavior.
+The mock backend ensures deterministic CI behavior.
 
 ---
 
@@ -194,7 +202,7 @@ The mock backend and fake backend ensure deterministic CI behavior.
 The `examples/` directory includes:
 
 - Rumble and periodic basics  
-- Capacity, playback, order, update, and mixing tests  
+- Max‑effects, playback, order, update, and mixing tests  
 - Condition effects on real hardware  
 - Mock backend visualizers  
 - Combined effect demos  
