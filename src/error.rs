@@ -6,6 +6,8 @@ pub enum ShakeError {
     Query,
     Arg,
     Transfer,
+    Io,
+    Permission,
 }
 
 pub type ShakeResult<T> = Result<T, ShakeError>;

@@ -61,6 +61,11 @@ impl Envelope {
             fade_level: f_lvl.min(ENVELOPE_FADE_LEVEL_MAX),
         }
     }
+
+    /// Returns true if the envelope has any non‑zero attack or fade.
+    pub fn is_active(&self) -> bool {
+        self.attack_length > 0 || self.fade_length > 0
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -121,10 +126,29 @@ impl Effect {
             Effect::Ramp(_) => EffectType::Ramp,
         }
     }
+
+    /// Returns the effect duration in milliseconds.
+    pub fn duration_ms(&self) -> u16 {
+        match self {
+            Effect::Rumble(e) => e.duration,
+            Effect::Periodic(e) => e.duration,
+            Effect::Constant(e) => e.duration,
+            Effect::Ramp(e) => e.duration,
+        }
+    }
+
+    /// Returns the direction (0–65535).
+    pub fn direction(&self) -> u16 {
+        match self {
+            Effect::Rumble(e) => e.direction,
+            Effect::Periodic(e) => e.direction,
+            Effect::Constant(e) => e.direction,
+            Effect::Ramp(e) => e.direction,
+        }
+    }
 }
 
 pub fn visualize_direction(direction: u16) -> &'static str {
-    // 0–65535 maps to 0–360 degrees
     let angle = (direction as f32 / 65535.0) * 360.0;
 
     match angle {
@@ -140,16 +164,19 @@ pub fn visualize_direction(direction: u16) -> &'static str {
     }
 }
 
+// =========================
+// Tests
+// =========================
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn visualize_periodic_sine() {
-        // A periodic effect with envelope so we can see the shape evolve
         let effect = PeriodicEffect {
             waveform: PeriodicWaveform::Sine,
-            period: 100, // ms
+            period: 100,
             magnitude: 0x7FFF,
             offset: 0,
             phase: 0,
@@ -170,28 +197,19 @@ mod tests {
             effect.period, effect.magnitude, effect.duration
         );
 
-        // Step through the effect in 50ms increments
         for t in (0..effect.duration as u32).step_by(50) {
-            // Base sine wave
             let sine = (2.0 * std::f32::consts::PI * (t as f32) / effect.period as f32).sin();
 
-            // Envelope multiplier
             let env = if t < effect.envelope.attack_length as u32 {
-                // Attack
                 t as f32 / effect.envelope.attack_length as f32
             } else if t > (effect.duration as u32 - effect.envelope.fade_length as u32) {
-                // Fade
                 let fade_start = (effect.duration - effect.envelope.fade_length) as f32;
                 1.0 - ((t as f32 - fade_start) / effect.envelope.fade_length as f32)
             } else {
-                // Sustain
                 1.0
             };
 
-            // Final value
             let val = (sine * effect.magnitude as f32 * env) as i32;
-
-            // ASCII bar graph
             let bar_len = (val.abs() / 1000) as usize;
             let bar = "*".repeat(bar_len);
 
@@ -227,16 +245,7 @@ mod tests {
 
     #[test]
     fn visualize_direction_ascii() {
-        let dirs = [
-            0,     // 0°   →
-            8192,  // 45°  ↗
-            16384, // 90°  ↑
-            24576, // 135° ↖
-            32768, // 180° ←
-            40960, // 225° ↙
-            49152, // 270° ↓
-            57344, // 315° ↘
-        ];
+        let dirs = [0, 8192, 16384, 24576, 32768, 40960, 49152, 57344];
 
         for d in dirs {
             println!("{:5} -> {}", d, crate::effect::visualize_direction(d));

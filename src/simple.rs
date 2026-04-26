@@ -12,12 +12,10 @@ fn clamp_i16(value: f32, min: i16, max: i16) -> i16 {
     value.clamp(min as f32, max as f32) as i16
 }
 
-/// Simple rumble without direction (direction = 0).
 pub fn simple_rumble(strong: f32, weak: f32, secs: f32) -> Effect {
     simple_rumble_dir(strong, weak, secs, 0.0)
 }
 
-/// Simple rumble with direction in degrees (0–360).
 pub fn simple_rumble_dir(strong: f32, weak: f32, secs: f32, direction_deg: f32) -> Effect {
     let strong_mag = clamp_u16(
         strong * RUMBLE_STRONG_MAGNITUDE_MAX as f32,
@@ -28,7 +26,6 @@ pub fn simple_rumble_dir(strong: f32, weak: f32, secs: f32, direction_deg: f32) 
         RUMBLE_WEAK_MAGNITUDE_MAX,
     );
 
-    // Convert degrees (0–360) to Linux FF units (0–0xFFFF)
     let dir = ((direction_deg.rem_euclid(360.0) / 360.0) * 65535.0) as u16;
 
     Effect::Rumble(RumbleEffect {
@@ -40,12 +37,25 @@ pub fn simple_rumble_dir(strong: f32, weak: f32, secs: f32, direction_deg: f32) 
     })
 }
 
+/// Simple periodic effect with default 100 ms period.
 pub fn simple_periodic(
     waveform: PeriodicWaveform,
     force: f32,
     attack: f32,
     sustain: f32,
     fade: f32,
+) -> Effect {
+    simple_periodic_with_period(waveform, force, attack, sustain, fade, 100)
+}
+
+/// Same as `simple_periodic` but with custom period (ms).
+pub fn simple_periodic_with_period(
+    waveform: PeriodicWaveform,
+    force: f32,
+    attack: f32,
+    sustain: f32,
+    fade: f32,
+    period_ms: u16,
 ) -> Effect {
     let total = attack + sustain + fade;
 
@@ -59,7 +69,7 @@ pub fn simple_periodic(
 
     Effect::Periodic(PeriodicEffect {
         waveform,
-        period: 100, // 0.1s
+        period: period_ms,
         magnitude,
         offset: 0,
         phase: 0,
@@ -93,9 +103,6 @@ pub fn simple_constant(force: f32, attack: f32, sustain: f32, fade: f32) -> Effe
 pub fn simple_ramp(start: f32, end: f32, attack: f32, sustain: f32, fade: f32) -> Effect {
     let total = attack + sustain + fade;
 
-    // Correct scaling:
-    // - Negative values scale to -32768
-    // - Positive values scale to  32767
     fn scale_signed(v: f32) -> i16 {
         if v >= 0.0 {
             (v * 0x7FFF as f32).clamp(0.0, 0x7FFF as f32) as i16

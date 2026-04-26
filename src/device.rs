@@ -1,6 +1,5 @@
 use std::fs::File;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::effect::Effect;
@@ -42,7 +41,9 @@ impl EffectHandle {
 
 impl Drop for EffectHandle {
     fn drop(&mut self) {
-        let _ = self.device.erase(self.id);
+        if let Err(e) = self.device.erase(self.id) {
+            log::warn!("libShake: failed to erase effect {}: {:?}", self.id, e);
+        }
     }
 }
 
@@ -73,8 +74,16 @@ impl Device {
                 let file = backend::open_device(&path)?;
                 let info = backend::query_device(&file)?;
 
+                // Stable ID: extract event number if possible
+                let stable_id = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(|s| s.strip_prefix("event"))
+                    .and_then(|n| n.parse::<u32>().ok())
+                    .unwrap_or(devices.len() as u32);
+
                 devices.push(DeviceInfo {
-                    id: devices.len() as u32,
+                    id: stable_id,
                     name: info.name,
                     capacity: info.capacity,
                     features: info.features,
@@ -137,11 +146,10 @@ impl Device {
         &self.features
     }
 
-    pub fn path(&self) -> &std::path::Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
-    /// Upload an effect and get an RAII handle.
     pub fn upload(self: &Arc<Self>, effect: &Effect) -> ShakeResult<EffectHandle> {
         let id = backend::upload_effect(&self.file, effect)?;
         Ok(EffectHandle::new(id, Arc::clone(self)))
@@ -167,8 +175,8 @@ impl Device {
         backend::set_autocenter(&self.file, value)
     }
 
-    #[cfg_attr(feature = "mock-backend", allow(dead_code))]
-    fn has_feature(&self, bit: u16) -> bool {
+    /// Generic feature check
+    pub fn supports(&self, bit: u16) -> bool {
         let idx = (bit / 64) as usize;
         let b = bit % 64;
 
@@ -180,12 +188,12 @@ impl Device {
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_rumble(&self) -> bool {
-        self.has_feature(FF_RUMBLE)
+        self.supports(FF_RUMBLE)
     }
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_periodic(&self) -> bool {
-        self.has_feature(FF_PERIODIC)
+        self.supports(FF_PERIODIC)
     }
 
     #[cfg(feature = "mock-backend")]
@@ -198,7 +206,6 @@ impl Device {
         true
     }
 
-    /// Simple rumble helper returning an RAII handle.
     pub fn rumble(
         self: &Arc<Self>,
         strong: f32,
@@ -209,7 +216,6 @@ impl Device {
         self.upload(&effect)
     }
 
-    /// Directional rumble helper (degrees 0–360).
     pub fn rumble_dir(
         self: &Arc<Self>,
         strong: f32,
