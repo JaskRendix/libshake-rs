@@ -61,3 +61,12 @@ fn effect_type_matches_variant() {
     let e = simple_rumble(1.0, 1.0, 1.0);
     assert_eq!(e.effect_type(), EffectType::Rumble);
 }
+
+#[test]
+fn simple_periodic_with_period_sets_period() {
+    let e = simple_periodic_with_period(PeriodicWaveform::Sine, 0.5, 0.1, 0.1, 0.1, 250);
+    match e {
+        Effect::Periodic(p) => assert_eq!(p.period, 250),
+        _ => panic!("Expected Periodic effect"),
+    }
+}
