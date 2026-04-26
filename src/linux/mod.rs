@@ -54,10 +54,16 @@ nix::ioctl_write_int!(eviocrmff, b'E', 0x81);
 fn scan_event_nodes_in(dir: &Path) -> ShakeResult<Vec<PathBuf>> {
     let mut nodes = Vec::new();
 
-    let entries = fs::read_dir(dir).map_err(|_| ShakeError::Device)?;
+    let entries = fs::read_dir(dir).map_err(|e| match e.kind() {
+        std::io::ErrorKind::PermissionDenied => ShakeError::Permission,
+        _ => ShakeError::Device,
+    })?;
 
     for entry in entries {
-        let entry = entry.map_err(|_| ShakeError::Device)?;
+        let entry = entry.map_err(|e| match e.kind() {
+            std::io::ErrorKind::PermissionDenied => ShakeError::Permission,
+            _ => ShakeError::Device,
+        })?;
         let name = entry.file_name();
         let name = match name.to_str() {
             Some(s) => s,
@@ -97,8 +103,13 @@ pub fn probe_device(path: &Path) -> ShakeResult<bool> {
 
 // Device opening
 pub fn open_device(path: &Path) -> ShakeResult<File> {
-    let fd = fcntl::open(path, OFlag::O_RDWR | OFlag::O_NONBLOCK, Mode::empty())
-        .map_err(|_| ShakeError::Device)?;
+    let fd =
+        fcntl::open(path, OFlag::O_RDWR | OFlag::O_NONBLOCK, Mode::empty()).map_err(
+            |e| match e {
+                nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+                _ => ShakeError::Device,
+            },
+        )?;
 
     Ok(unsafe { File::from_raw_fd(fd) })
 }
@@ -110,13 +121,19 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     // EVIOCGEFFECTS
     let mut effects: libc::c_int = 0;
     unsafe {
-        eviocgeffects(raw_fd, &mut effects as *mut libc::c_int).map_err(|_| ShakeError::Query)?;
+        eviocgeffects(raw_fd, &mut effects as *mut libc::c_int).map_err(|e| match e {
+            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+            _ => ShakeError::Query,
+        })?;
     }
 
     // EVIOCGNAME
     let mut name_buf = [0u8; EVIOCGNAME_LEN];
     unsafe {
-        eviocgname(raw_fd, &mut name_buf).map_err(|_| ShakeError::Query)?;
+        eviocgname(raw_fd, &mut name_buf).map_err(|e| match e {
+            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+            _ => ShakeError::Query,
+        })?;
     }
     let name = String::from_utf8_lossy(
         &name_buf[..name_buf
@@ -129,7 +146,10 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     // EVIOCGBIT(EV_FF)
     let mut ff_bits = [0u8; EVIOCGBIT_EV_FF_LEN];
     unsafe {
-        eviocgbit_ff(raw_fd, &mut ff_bits).map_err(|_| ShakeError::Query)?;
+        eviocgbit_ff(raw_fd, &mut ff_bits).map_err(|e| match e {
+            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+            _ => ShakeError::Query,
+        })?;
     }
 
     let mut features = Vec::new();
@@ -173,7 +193,7 @@ fn rumble_to_ff(r: &RumbleEffect) -> libc::ff_effect {
 
     fill_replay(&mut ff, r.duration, r.delay);
     ff.id = -1;
-    ff.direction = 0;
+    ff.direction = r.direction;
 
     ff
 }
@@ -203,7 +223,7 @@ fn periodic_to_ff(p: &PeriodicEffect) -> libc::ff_effect {
 
     fill_replay(&mut ff, p.duration, p.delay);
     ff.id = -1;
-    ff.direction = 0;
+    ff.direction = p.direction;
 
     ff
 }
@@ -220,7 +240,7 @@ fn constant_to_ff(c: &ConstantEffect) -> libc::ff_effect {
 
     fill_replay(&mut ff, c.duration, c.delay);
     ff.id = -1;
-    ff.direction = 0;
+    ff.direction = c.direction;
 
     ff
 }
@@ -238,7 +258,7 @@ fn ramp_to_ff(r: &RampEffect) -> libc::ff_effect {
 
     fill_replay(&mut ff, r.duration, r.delay);
     ff.id = -1;
-    ff.direction = 0;
+    ff.direction = r.direction;
 
     ff
 }
@@ -258,7 +278,10 @@ pub fn upload_effect(fd: &File, effect: &Effect) -> ShakeResult<i32> {
     let mut ff = effect_to_ff(effect)?;
 
     unsafe {
-        eviocsff(raw_fd, &mut ff as *mut libc::ff_effect).map_err(|_| ShakeError::Transfer)?;
+        eviocsff(raw_fd, &mut ff as *mut libc::ff_effect).map_err(|e| match e {
+            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+            _ => ShakeError::Io,
+        })?;
     }
 
     Ok(ff.id as i32)
@@ -268,7 +291,10 @@ pub fn erase_effect(fd: &File, id: i32) -> ShakeResult<()> {
     let raw_fd = fd.as_raw_fd();
 
     unsafe {
-        eviocrmff(raw_fd, id as u64).map_err(|_| ShakeError::Transfer)?;
+        eviocrmff(raw_fd, id as u64).map_err(|e| match e {
+            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+            _ => ShakeError::Io,
+        })?;
     }
 
     Ok(())
@@ -290,7 +316,10 @@ fn send_ff_event(fd: &File, code: u16, value: i32) -> ShakeResult<()> {
     };
 
     let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-    unistd::write(borrowed, bytes).map_err(|_| ShakeError::Transfer)?;
+    unistd::write(borrowed, bytes).map_err(|e| match e {
+        nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
+        _ => ShakeError::Io,
+    })?;
     Ok(())
 }
 
