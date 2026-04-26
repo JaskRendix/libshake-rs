@@ -145,7 +145,7 @@ pub trait Backend {
 
     fn scan() -> ShakeResult<Vec<PathBuf>>;
     fn open(path: &Path) -> ShakeResult<Self::Handle>;
-    fn query(handle: &Self::Handle) -> ShakeResult<DeviceInfo>;
+    fn query(handle: &Self::Handle) -> ShakeResult<RawDeviceInfo>;
 
     fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32>;
     fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()>;

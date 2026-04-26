@@ -1,59 +1,53 @@
-use crate::backend::Backend;
+use crate::backend::{Backend, RawDeviceInfo};
+use crate::effect::{ConditionEffect, Effect, PeriodicEffect, RampEffect};
+use crate::error::{ShakeError, ShakeResult};
+
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::effect::{ConditionEffect, Effect, PeriodicEffect, RampEffect};
-use crate::error::{ShakeError, ShakeResult};
-
 lazy_static::lazy_static! {
     static ref MOCK_EFFECTS: Mutex<HashMap<i32, Effect>> = Mutex::new(HashMap::new());
-    static ref MOCK_TIMELINE: Mutex<Vec<(i32, u32)>> = Mutex::new(Vec::new()); // (effect_id, start_time_ms)
+    static ref MOCK_TIMELINE: Mutex<Vec<(i32, u32)>> = Mutex::new(Vec::new());
     static ref MOCK_GAIN: Mutex<u16> = Mutex::new(100);
     static ref MOCK_AUTOCENTER: Mutex<u16> = Mutex::new(0);
     static ref MOCK_LOG: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 
-pub struct DeviceInfo {
-    pub name: String,
-    pub capacity: u32,
-    pub features: Vec<u64>,
-}
-
+// -----------------------------------------------------------------------------
 // Device discovery
+// -----------------------------------------------------------------------------
 
-pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
+fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
     Ok(vec![PathBuf::from("/dev/mock0")])
 }
 
-pub fn probe_device(_path: &Path) -> ShakeResult<bool> {
-    Ok(true)
-}
-
-pub fn open_device(_path: &Path) -> ShakeResult<File> {
+fn open_device(_path: &Path) -> ShakeResult<File> {
     File::open("/dev/null").map_err(|_| ShakeError::Device)
 }
 
-pub fn query_device(_file: &File) -> ShakeResult<DeviceInfo> {
+fn query_raw(_file: &File) -> ShakeResult<RawDeviceInfo> {
     println!("[MOCK] Device Inspector:");
     println!("  Name: Mock Device");
     println!("  Capacity: 16 effects");
-    println!("  Features: Rumble, Periodic, Constant, Ramp, Spring, Friction, Damper, Inertia");
+    println!("  Features: ALL");
 
     mock_dashboard();
 
-    Ok(DeviceInfo {
+    Ok(RawDeviceInfo {
         name: "Mock Device".into(),
         capacity: 16,
         features: vec![u64::MAX, u64::MAX],
     })
 }
 
+// -----------------------------------------------------------------------------
 // Effect lifecycle
+// -----------------------------------------------------------------------------
 
-pub fn upload_effect(_file: &File, effect: &Effect) -> ShakeResult<i32> {
+fn upload_effect(_file: &File, effect: &Effect) -> ShakeResult<i32> {
     let mut map = MOCK_EFFECTS.lock().unwrap();
     let id = (map.len() as i32) + 1;
     map.insert(id, effect.clone());
@@ -63,38 +57,35 @@ pub fn upload_effect(_file: &File, effect: &Effect) -> ShakeResult<i32> {
     Ok(id)
 }
 
-pub fn play_effect(_file: &File, id: i32) -> ShakeResult<()> {
+fn update_effect(_file: &File, id: i32, effect: &Effect) -> ShakeResult<()> {
+    let mut map = MOCK_EFFECTS.lock().unwrap();
+
+    if !map.contains_key(&id) {
+        return Err(ShakeError::Device);
+    }
+
+    map.insert(id, effect.clone());
+
+    println!("[MOCK] Updated effect ID: {}", id);
+    log(format!("Update effect {}", id));
+    Ok(())
+}
+
+fn play_effect(_file: &File, id: i32) -> ShakeResult<()> {
     println!("[MOCK] Playing effect ID: {}", id);
     log(format!("Play effect {}", id));
 
-    // Add to timeline
     {
         let mut timeline = MOCK_TIMELINE.lock().unwrap();
         timeline.push((id, now_ms()));
     }
 
-    // Fetch effect
     let effects = MOCK_EFFECTS.lock().unwrap();
     let Some(effect) = effects.get(&id) else {
         println!("[MOCK] No effect found for ID {}", id);
         return Ok(());
     };
 
-    // Rumble mixer
-    if let Effect::Rumble(r) = effect {
-        let gain = *MOCK_GAIN.lock().unwrap() as f32 / 100.0;
-        let strong = (r.strong_magnitude as f32 * gain) as i32;
-        let weak = (r.weak_magnitude as f32 * gain) as i32;
-
-        println!(
-            "[MOCK] Rumble Mixer: strong={} weak={} (gain={}%)",
-            strong,
-            weak,
-            *MOCK_GAIN.lock().unwrap()
-        );
-    }
-
-    // Oscilloscope
     match effect {
         Effect::Periodic(p) => visualize_periodic(p),
         Effect::Ramp(r) => visualize_ramp(r),
@@ -119,22 +110,24 @@ pub fn play_effect(_file: &File, id: i32) -> ShakeResult<()> {
     Ok(())
 }
 
-pub fn stop_effect(_file: &File, id: i32) -> ShakeResult<()> {
+fn stop_effect(_file: &File, id: i32) -> ShakeResult<()> {
     println!("[MOCK] Stopping effect ID: {}", id);
     log(format!("Stop effect {}", id));
     Ok(())
 }
 
-pub fn erase_effect(_file: &File, id: i32) -> ShakeResult<()> {
+fn erase_effect(_file: &File, id: i32) -> ShakeResult<()> {
     println!("[MOCK] Erasing effect ID: {}", id);
     log(format!("Erase effect {}", id));
     MOCK_EFFECTS.lock().unwrap().remove(&id);
     Ok(())
 }
 
+// -----------------------------------------------------------------------------
 // Device settings
+// -----------------------------------------------------------------------------
 
-pub fn set_gain(_file: &File, value: u16) -> ShakeResult<()> {
+fn set_gain(_file: &File, value: u16) -> ShakeResult<()> {
     *MOCK_GAIN.lock().unwrap() = value;
     println!("[MOCK] Gain set to {}%", value);
     log(format!("Set gain {}", value));
@@ -142,7 +135,7 @@ pub fn set_gain(_file: &File, value: u16) -> ShakeResult<()> {
     Ok(())
 }
 
-pub fn set_autocenter(_file: &File, value: u16) -> ShakeResult<()> {
+fn set_autocenter(_file: &File, value: u16) -> ShakeResult<()> {
     *MOCK_AUTOCENTER.lock().unwrap() = value;
     println!("[MOCK] Autocenter set to {}%", value);
     log(format!("Set autocenter {}", value));
@@ -150,7 +143,9 @@ pub fn set_autocenter(_file: &File, value: u16) -> ShakeResult<()> {
     Ok(())
 }
 
+// -----------------------------------------------------------------------------
 // Helpers
+// -----------------------------------------------------------------------------
 
 fn now_ms() -> u32 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -167,7 +162,9 @@ fn log(msg: String) {
         .push(format!("[{}] {}", now_ms(), msg));
 }
 
-// Oscilloscopes
+// -----------------------------------------------------------------------------
+// Visualization
+// -----------------------------------------------------------------------------
 
 fn visualize_periodic(p: &PeriodicEffect) {
     println!("[MOCK] Oscilloscope (Periodic):");
@@ -198,16 +195,13 @@ fn visualize_condition(c: &ConditionEffect, label: &str) {
         "  Saturation:  L:{} R:{}",
         c.left_saturation, c.right_saturation
     );
-
-    let left = if c.left_coeff > 0 { "<<" } else { "--" };
-    let right = if c.right_coeff > 0 { ">>" } else { "--" };
-
-    println!("  Feel: [ {} | center | {} ]", left, right);
 }
 
-// Timeline visualizer
+// -----------------------------------------------------------------------------
+// Timeline + Dashboard + Profiler
+// -----------------------------------------------------------------------------
 
-pub fn visualize_timeline() {
+fn visualize_timeline() {
     let timeline = MOCK_TIMELINE.lock().unwrap();
     let effects = MOCK_EFFECTS.lock().unwrap();
 
@@ -216,22 +210,12 @@ pub fn visualize_timeline() {
 
     for (id, start) in timeline.iter() {
         if let Some(effect) = effects.get(id) {
-            println!("Effect {} started at {}ms:", id, start);
-
+            println!("Effect {} started at {}ms", id, start);
             match effect {
-                Effect::Periodic(p) => {
-                    println!("  Type: Periodic");
-                    println!("  Duration: {}ms", p.duration);
-                }
-                Effect::Ramp(r) => {
-                    println!("  Type: Ramp");
-                    println!("  Duration: {}ms", r.duration);
-                }
-                Effect::Rumble(r) => {
-                    println!("  Type: Rumble");
-                    println!("  Duration: {}ms", r.duration);
-                }
-                _ => println!("  Type: Other"),
+                Effect::Periodic(p) => println!("  Periodic ({}ms)", p.duration),
+                Effect::Ramp(r) => println!("  Ramp ({}ms)", r.duration),
+                Effect::Rumble(r) => println!("  Rumble ({}ms)", r.duration),
+                _ => println!("  Other"),
             }
         }
     }
@@ -239,9 +223,7 @@ pub fn visualize_timeline() {
     println!("--------------------------------\n");
 }
 
-// Device dashboard
-
-pub fn mock_dashboard() {
+fn mock_dashboard() {
     let gain = *MOCK_GAIN.lock().unwrap();
     let autocenter = *MOCK_AUTOCENTER.lock().unwrap();
     let effects = MOCK_EFFECTS.lock().unwrap();
@@ -256,12 +238,9 @@ pub fn mock_dashboard() {
     println!("===========================\n");
 }
 
-// Mock profiler (effect density + fake CPU load)
-
-pub fn mock_profiler() {
+fn mock_profiler() {
     let timeline = MOCK_TIMELINE.lock().unwrap();
     let active = timeline.len();
-
     let cpu_load = (active as f32 * 7.5).min(100.0);
 
     println!("[MOCK] Profiler:");
@@ -270,7 +249,9 @@ pub fn mock_profiler() {
     println!("  Simulated CPU load: {:.1}%", cpu_load);
 }
 
+// -----------------------------------------------------------------------------
 // Log exporter
+// -----------------------------------------------------------------------------
 
 pub fn export_mock_log(path: &Path) -> ShakeResult<()> {
     let log = MOCK_LOG.lock().unwrap();
@@ -290,6 +271,10 @@ pub fn export_mock_log(path: &Path) -> ShakeResult<()> {
     Ok(())
 }
 
+// -----------------------------------------------------------------------------
+// Backend implementation
+// -----------------------------------------------------------------------------
+
 pub struct MockBackend;
 
 impl Backend for MockBackend {
@@ -303,20 +288,20 @@ impl Backend for MockBackend {
         open_device(path)
     }
 
-    fn query(handle: &Self::Handle) -> ShakeResult<crate::device::DeviceInfo> {
-        let raw = query_device(handle)?;
+    fn close(handle: Self::Handle) {
+        drop(handle);
+    }
 
-        Ok(crate::device::DeviceInfo {
-            id: 0,
-            name: raw.name,
-            capacity: raw.capacity,
-            features: raw.features,
-            path: PathBuf::from("/dev/mock0"),
-        })
+    fn query(handle: &Self::Handle) -> ShakeResult<RawDeviceInfo> {
+        query_raw(handle)
     }
 
     fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32> {
         upload_effect(handle, effect)
+    }
+
+    fn update(handle: &Self::Handle, id: i32, effect: &Effect) -> ShakeResult<()> {
+        update_effect(handle, id, effect)
     }
 
     fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
@@ -412,8 +397,8 @@ mod tests {
     #[test]
     fn probe_device_always_true() {
         reset_mock_state();
-        let ok = probe_device(Path::new("/dev/mock0")).unwrap();
-        assert!(ok);
+        let f = open_device(Path::new("/dev/mock0"));
+        assert!(f.is_ok());
     }
 
     #[test]
@@ -427,7 +412,7 @@ mod tests {
     fn query_device_returns_mock_info() {
         reset_mock_state();
         let f = open_device(Path::new("/dev/mock0")).unwrap();
-        let info = query_device(&f).unwrap();
+        let info = query_raw(&f).unwrap();
         assert_eq!(info.name, "Mock Device");
         assert_eq!(info.capacity, 16);
         assert_eq!(info.features.len(), 2);

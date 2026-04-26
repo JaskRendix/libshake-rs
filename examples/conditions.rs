@@ -19,10 +19,10 @@ fn main() -> ShakeResult<()> {
     println!("Testing condition effects on: {}", dev.name());
 
     // 2. Check hardware support
-    println!("Supports Spring:   {}", dev.supports_spring());
-    println!("Supports Friction: {}", dev.supports_friction());
-    println!("Supports Damper:   {}", dev.supports_damper());
-    println!("Supports Inertia:  {}", dev.supports_inertia());
+    println!("Supports Spring:   {}", dev.capabilities().spring);
+    println!("Supports Friction: {}", dev.capabilities().friction);
+    println!("Supports Damper:   {}", dev.capabilities().damper);
+    println!("Supports Inertia:  {}", dev.capabilities().inertia);
 
     // 3. Upload a Spring effect
     println!("Uploading Spring effect...");

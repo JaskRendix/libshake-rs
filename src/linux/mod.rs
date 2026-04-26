@@ -1,22 +1,19 @@
 #![cfg(target_os = "linux")]
 
-use crate::backend::Backend;
-use std::fs;
-use std::fs::File;
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd};
-use std::path::Path;
-use std::path::PathBuf;
-
-use nix::fcntl::{self, OFlag};
-use nix::libc;
-use nix::sys::stat::Mode;
-use nix::unistd;
-
+use crate::backend::{Backend, RawDeviceInfo};
 use crate::effect::{
     ConditionEffect, ConstantEffect, Effect, Envelope, PeriodicEffect, PeriodicWaveform,
     RampEffect, RumbleEffect,
 };
 use crate::error::{ShakeError, ShakeResult};
+
+use std::fs::{self, File};
+use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd};
+use std::path::{Path, PathBuf};
+
+use nix::fcntl::{self, OFlag};
+use nix::libc;
+use nix::sys::stat::Mode;
 
 // Linux FF constants
 const EV_FF: u16 = 0x15;
@@ -41,14 +38,6 @@ pub const FF_FRICTION: u16 = 0x54;
 pub const FF_DAMPER: u16 = 0x55;
 pub const FF_INERTIA: u16 = 0x56;
 
-pub struct DeviceInfo {
-    pub id: u32,
-    pub name: String,
-    pub capacity: u32,
-    pub features: Vec<u64>,
-    pub path: PathBuf,
-}
-
 // ioctl definitions
 const EVIOCGNAME_LEN: usize = 256;
 const EVIOCGBIT_EV_FF_LEN: usize = 16;
@@ -58,6 +47,10 @@ nix::ioctl_read_buf!(eviocgname, b'E', 0x06, u8);
 nix::ioctl_read_buf!(eviocgbit_ff, b'E', 0x20 + EV_FF as u8, u8);
 nix::ioctl_write_ptr!(eviocsff, b'E', 0x80, libc::ff_effect);
 nix::ioctl_write_int!(eviocrmff, b'E', 0x81);
+
+// -----------------------------------------------------------------------------
+// Node scanning
+// -----------------------------------------------------------------------------
 
 fn scan_event_nodes_in(dir: &Path) -> ShakeResult<Vec<PathBuf>> {
     let mut nodes = Vec::new();
@@ -72,6 +65,7 @@ fn scan_event_nodes_in(dir: &Path) -> ShakeResult<Vec<PathBuf>> {
             std::io::ErrorKind::PermissionDenied => ShakeError::Permission,
             _ => ShakeError::Device,
         })?;
+
         let name = entry.file_name();
         let name = match name.to_str() {
             Some(s) => s,
@@ -90,27 +84,15 @@ fn scan_event_nodes_in(dir: &Path) -> ShakeResult<Vec<PathBuf>> {
     Ok(nodes)
 }
 
-pub fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
+fn scan_event_nodes() -> ShakeResult<Vec<PathBuf>> {
     scan_event_nodes_in(Path::new("/dev/input"))
 }
 
-// Device probing
-pub fn probe_device(path: &Path) -> ShakeResult<bool> {
-    let file = match open_device(path) {
-        Ok(f) => f,
-        Err(_) => return Ok(false),
-    };
-
-    let info = match query_device(&file) {
-        Ok(i) => i,
-        Err(_) => return Ok(false),
-    };
-
-    Ok(info.capacity > 0)
-}
-
+// -----------------------------------------------------------------------------
 // Device opening
-pub fn open_device(path: &Path) -> ShakeResult<File> {
+// -----------------------------------------------------------------------------
+
+fn open_device(path: &Path) -> ShakeResult<File> {
     let fd =
         fcntl::open(path, OFlag::O_RDWR | OFlag::O_NONBLOCK, Mode::empty()).map_err(
             |e| match e {
@@ -122,26 +104,23 @@ pub fn open_device(path: &Path) -> ShakeResult<File> {
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
-// Query device capabilities
-pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
+// -----------------------------------------------------------------------------
+// Query device info
+// -----------------------------------------------------------------------------
+
+fn query_raw(fd: &File) -> ShakeResult<RawDeviceInfo> {
     let raw_fd = fd.as_raw_fd();
 
     // EVIOCGEFFECTS
     let mut effects: libc::c_int = 0;
     unsafe {
-        eviocgeffects(raw_fd, &mut effects as *mut libc::c_int).map_err(|e| match e {
-            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
-            _ => ShakeError::Query,
-        })?;
+        eviocgeffects(raw_fd, &mut effects).map_err(|_| ShakeError::Query)?;
     }
 
     // EVIOCGNAME
     let mut name_buf = [0u8; EVIOCGNAME_LEN];
     unsafe {
-        eviocgname(raw_fd, &mut name_buf).map_err(|e| match e {
-            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
-            _ => ShakeError::Query,
-        })?;
+        eviocgname(raw_fd, &mut name_buf).map_err(|_| ShakeError::Query)?;
     }
     let name = String::from_utf8_lossy(
         &name_buf[..name_buf
@@ -154,10 +133,7 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     // EVIOCGBIT(EV_FF)
     let mut ff_bits = [0u8; EVIOCGBIT_EV_FF_LEN];
     unsafe {
-        eviocgbit_ff(raw_fd, &mut ff_bits).map_err(|e| match e {
-            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
-            _ => ShakeError::Query,
-        })?;
+        eviocgbit_ff(raw_fd, &mut ff_bits).map_err(|_| ShakeError::Query)?;
     }
 
     let mut features = Vec::new();
@@ -169,16 +145,17 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
         features.push(v);
     }
 
-    Ok(DeviceInfo {
-        id: 0, // Device::enumerate() will assign the real ID
+    Ok(RawDeviceInfo {
         name,
         capacity: effects as u32,
         features,
-        path: PathBuf::new(), // Device::enumerate() overwrites this too
     })
 }
 
-// Effect conversion helpers
+// -----------------------------------------------------------------------------
+// Effect conversion
+// -----------------------------------------------------------------------------
+
 fn fill_replay(ff: &mut libc::ff_effect, duration: u16, delay: u16) {
     ff.replay.length = duration;
     ff.replay.delay = delay;
@@ -278,7 +255,6 @@ fn condition_to_ff(c: &ConditionEffect, effect_type: u16) -> libc::ff_effect {
     ff.type_ = effect_type;
 
     unsafe {
-        // ff.u is a union; for condition effects it contains 2 axes
         let cond_ptr = ff.u.as_mut_ptr().cast::<[libc::ff_condition_effect; 2]>();
 
         for i in 0..2 {
@@ -291,7 +267,6 @@ fn condition_to_ff(c: &ConditionEffect, effect_type: u16) -> libc::ff_effect {
         }
     }
 
-    // Condition effects ignore replay length/delay
     ff.id = -1;
     ff.direction = 0;
 
@@ -299,41 +274,50 @@ fn condition_to_ff(c: &ConditionEffect, effect_type: u16) -> libc::ff_effect {
 }
 
 fn effect_to_ff(effect: &Effect) -> ShakeResult<libc::ff_effect> {
-    match effect {
-        Effect::Rumble(r) => Ok(rumble_to_ff(r)),
-        Effect::Periodic(p) => Ok(periodic_to_ff(p)),
-        Effect::Constant(c) => Ok(constant_to_ff(c)),
-        Effect::Ramp(r) => Ok(ramp_to_ff(r)),
-        Effect::Spring(c) => Ok(condition_to_ff(c, FF_SPRING)),
-        Effect::Friction(c) => Ok(condition_to_ff(c, FF_FRICTION)),
-        Effect::Damper(c) => Ok(condition_to_ff(c, FF_DAMPER)),
-        Effect::Inertia(c) => Ok(condition_to_ff(c, FF_INERTIA)),
-    }
+    Ok(match effect {
+        Effect::Rumble(r) => rumble_to_ff(r),
+        Effect::Periodic(p) => periodic_to_ff(p),
+        Effect::Constant(c) => constant_to_ff(c),
+        Effect::Ramp(r) => ramp_to_ff(r),
+        Effect::Spring(c) => condition_to_ff(c, FF_SPRING),
+        Effect::Friction(c) => condition_to_ff(c, FF_FRICTION),
+        Effect::Damper(c) => condition_to_ff(c, FF_DAMPER),
+        Effect::Inertia(c) => condition_to_ff(c, FF_INERTIA),
+    })
 }
 
+// -----------------------------------------------------------------------------
 // Effect operations
-pub fn upload_effect(fd: &File, effect: &Effect) -> ShakeResult<i32> {
+// -----------------------------------------------------------------------------
+
+fn upload_effect(fd: &File, effect: &Effect) -> ShakeResult<i32> {
     let raw_fd = fd.as_raw_fd();
-    let mut ff = effect_to_ff(effect)?;
+    let ff = effect_to_ff(effect)?;
 
     unsafe {
-        eviocsff(raw_fd, &mut ff as *mut libc::ff_effect).map_err(|e| match e {
-            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
-            _ => ShakeError::Io,
-        })?;
+        eviocsff(raw_fd, &ff).map_err(|_| ShakeError::Io)?;
     }
 
     Ok(ff.id as i32)
 }
 
-pub fn erase_effect(fd: &File, id: i32) -> ShakeResult<()> {
+fn update_effect(fd: &File, id: i32, effect: &Effect) -> ShakeResult<()> {
+    let raw_fd = fd.as_raw_fd();
+    let mut ff = effect_to_ff(effect)?;
+    ff.id = id as i16;
+
+    unsafe {
+        eviocsff(raw_fd, &ff).map_err(|_| ShakeError::Io)?;
+    }
+
+    Ok(())
+}
+
+fn erase_effect(fd: &File, id: i32) -> ShakeResult<()> {
     let raw_fd = fd.as_raw_fd();
 
     unsafe {
-        eviocrmff(raw_fd, id as u64).map_err(|e| match e {
-            nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
-            _ => ShakeError::Io,
-        })?;
+        eviocrmff(raw_fd, id as u64).map_err(|_| ShakeError::Io)?;
     }
 
     Ok(())
@@ -355,28 +339,29 @@ fn send_ff_event(fd: &File, code: u16, value: i32) -> ShakeResult<()> {
     };
 
     let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-    unistd::write(borrowed, bytes).map_err(|e| match e {
-        nix::Error::EACCES | nix::Error::EPERM => ShakeError::Permission,
-        _ => ShakeError::Io,
-    })?;
+    nix::unistd::write(borrowed, bytes).map_err(|_| ShakeError::Io)?;
     Ok(())
 }
 
-pub fn play_effect(fd: &File, id: i32) -> ShakeResult<()> {
+fn play_effect(fd: &File, id: i32) -> ShakeResult<()> {
     send_ff_event(fd, id as u16, 1)
 }
 
-pub fn stop_effect(fd: &File, id: i32) -> ShakeResult<()> {
+fn stop_effect(fd: &File, id: i32) -> ShakeResult<()> {
     send_ff_event(fd, id as u16, 0)
 }
 
-pub fn set_gain(fd: &File, gain: u16) -> ShakeResult<()> {
+fn set_gain(fd: &File, gain: u16) -> ShakeResult<()> {
     send_ff_event(fd, FF_GAIN, gain as i32)
 }
 
-pub fn set_autocenter(fd: &File, value: u16) -> ShakeResult<()> {
+fn set_autocenter(fd: &File, value: u16) -> ShakeResult<()> {
     send_ff_event(fd, FF_AUTOCENTER, value as i32)
 }
+
+// -----------------------------------------------------------------------------
+// Backend implementation
+// -----------------------------------------------------------------------------
 
 pub struct LinuxBackend;
 
@@ -391,20 +376,20 @@ impl Backend for LinuxBackend {
         open_device(path)
     }
 
-    fn query(handle: &Self::Handle) -> ShakeResult<crate::device::DeviceInfo> {
-        let raw = query_device(handle)?;
+    fn close(handle: Self::Handle) {
+        drop(handle);
+    }
 
-        Ok(crate::device::DeviceInfo {
-            id: 0, // Device::enumerate() will overwrite this
-            name: raw.name,
-            capacity: raw.capacity,
-            features: raw.features,
-            path: PathBuf::new(), // Device::enumerate() overwrites this too
-        })
+    fn query(handle: &Self::Handle) -> ShakeResult<RawDeviceInfo> {
+        query_raw(handle)
     }
 
     fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32> {
         upload_effect(handle, effect)
+    }
+
+    fn update(handle: &Self::Handle, id: i32, effect: &Effect) -> ShakeResult<()> {
+        update_effect(handle, id, effect)
     }
 
     fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()> {

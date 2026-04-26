@@ -56,7 +56,7 @@ fn main() -> ShakeResult<()> {
 
     println!("\n=== Testing Spring ConditionEffect ===");
 
-    println!("Device supports Spring: {}", dev.supports_spring());
+    println!("Device supports Spring: {}", dev.capabilities().spring);
 
     let spring = simple_spring(
         0.8, // strength

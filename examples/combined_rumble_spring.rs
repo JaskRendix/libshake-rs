@@ -23,7 +23,7 @@ fn main() -> ShakeResult<()> {
     thread::sleep(Duration::from_secs(1));
     r_handle.stop()?;
 
-    println!("\nDevice supports Spring: {}", dev.supports_spring());
+    println!("\nDevice supports Spring: {}", dev.capabilities().spring);
 
     let spring = simple_spring(
         0.8, // strength

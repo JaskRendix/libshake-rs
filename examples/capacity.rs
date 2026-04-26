@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 fn main() -> ShakeResult<()> {
     let device: Arc<Device> = Device::open(0)?;
-    let capacity = device.capacity();
+    let capacity = device.max_effects(); // ← FIXED
 
     println!("Reported capacity: {}", capacity);
 

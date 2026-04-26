@@ -25,7 +25,10 @@ fn main() -> ShakeResult<()> {
     thread::sleep(Duration::from_secs(2));
     p_handle.stop()?;
 
-    println!("\nDevice supports Friction: {}", dev.supports_friction());
+    println!(
+        "\nDevice supports Friction: {}",
+        dev.capabilities().friction
+    );
 
     let friction = simple_friction(0.7);
 

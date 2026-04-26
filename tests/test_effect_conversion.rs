@@ -111,9 +111,9 @@ fn device_supports_condition_effects_queries_do_not_panic() {
     if let Some(info) = list.first() {
         let dev = shake::device::Device::open_info(info).unwrap();
 
-        let _ = dev.supports_spring();
-        let _ = dev.supports_friction();
-        let _ = dev.supports_damper();
-        let _ = dev.supports_inertia();
+        let _ = dev.capabilities().spring;
+        let _ = dev.capabilities().friction;
+        let _ = dev.capabilities().damper;
+        let _ = dev.capabilities().inertia;
     }
 }

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, DeviceCapabilities, RawDeviceInfo};
 use crate::effect::Effect;
 use crate::error::{ShakeError, ShakeResult};
 
@@ -43,49 +43,68 @@ impl Drop for EffectHandle {
     }
 }
 
+/// Public, ergonomic device metadata.
+pub struct DeviceInfo {
+    pub id: u32,
+    pub name: String,
+    pub max_effects: u32,
+    pub raw_features: Vec<u64>,
+    pub path: PathBuf,
+}
+
+impl DeviceInfo {
+    pub fn supports(&self, bit: u16) -> bool {
+        let idx = (bit / 64) as usize;
+        let b = bit % 64;
+
+        self.raw_features
+            .get(idx)
+            .map(|chunk| (chunk & (1 << b)) != 0)
+            .unwrap_or(false)
+    }
+}
+
 pub struct Device {
     id: u32,
     name: String,
-    capacity: u32,
-    features: Vec<u64>,
+    max_effects: u32,
+    raw_features: Vec<u64>,
+    capabilities: DeviceCapabilities,
     handle: <ActiveBackend as Backend>::Handle,
     path: PathBuf,
 }
 
-pub struct DeviceInfo {
-    pub id: u32,
-    pub name: String,
-    pub capacity: u32,
-    pub features: Vec<u64>,
-    pub path: PathBuf,
-}
-
 impl Device {
-    // ---------------------------------------------------------------------
-    // Device enumeration / opening
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Enumeration
+    // -------------------------------------------------------------------------
 
     pub fn enumerate() -> ShakeResult<Vec<DeviceInfo>> {
         let mut devices = Vec::new();
         let entries = ActiveBackend::scan()?;
 
-        for path in entries {
-            if ActiveBackend::open(&path).is_ok() {
-                let handle = ActiveBackend::open(&path)?;
-                let info = ActiveBackend::query(&handle)?;
+        for (idx, path) in entries.into_iter().enumerate() {
+            if let Ok(handle) = ActiveBackend::open(&path) {
+                let RawDeviceInfo {
+                    name,
+                    capacity,
+                    features,
+                } = ActiveBackend::query(&handle)?;
+
+                ActiveBackend::close(handle);
 
                 let stable_id = path
                     .file_name()
                     .and_then(|n| n.to_str())
                     .and_then(|s| s.strip_prefix("event"))
                     .and_then(|n| n.parse::<u32>().ok())
-                    .unwrap_or(devices.len() as u32);
+                    .unwrap_or(idx as u32);
 
                 devices.push(DeviceInfo {
                     id: stable_id,
-                    name: info.name,
-                    capacity: info.capacity,
-                    features: info.features,
+                    name,
+                    max_effects: capacity,
+                    raw_features: features,
                     path,
                 });
             }
@@ -93,6 +112,10 @@ impl Device {
 
         Ok(devices)
     }
+
+    // -------------------------------------------------------------------------
+    // Opening
+    // -------------------------------------------------------------------------
 
     pub fn open(id: u32) -> ShakeResult<Arc<Device>> {
         let infos = Device::enumerate()?;
@@ -105,11 +128,14 @@ impl Device {
 
     pub fn open_info(info: &DeviceInfo) -> ShakeResult<Arc<Device>> {
         let handle = ActiveBackend::open(&info.path)?;
+        let capabilities = ActiveBackend::capabilities(&handle)?;
+
         Ok(Arc::new(Device {
             id: info.id,
             name: info.name.clone(),
-            capacity: info.capacity,
-            features: info.features.clone(),
+            max_effects: info.max_effects, // ← FIXED HERE
+            raw_features: info.raw_features.clone(),
+            capabilities,
             handle,
             path: info.path.clone(),
         }))
@@ -117,24 +143,35 @@ impl Device {
 
     pub fn open_path(path: &Path) -> ShakeResult<Arc<Device>> {
         let handle = ActiveBackend::open(path)?;
-        let info = ActiveBackend::query(&handle)?;
+        let RawDeviceInfo {
+            name,
+            capacity,
+            features,
+        } = ActiveBackend::query(&handle)?;
+        let capabilities = ActiveBackend::capabilities(&handle)?;
+
         Ok(Arc::new(Device {
             id: 0,
-            name: info.name,
-            capacity: info.capacity,
-            features: info.features,
+            name,
+            max_effects: capacity,
+            raw_features: features,
+            capabilities,
             handle,
             path: path.to_path_buf(),
         }))
     }
 
-    // ---------------------------------------------------------------------
-    // Backend operations
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Effect operations
+    // -------------------------------------------------------------------------
 
     pub fn upload(self: &Arc<Self>, effect: &Effect) -> ShakeResult<EffectHandle> {
         let id = ActiveBackend::upload(&self.handle, effect)?;
         Ok(EffectHandle::new(id, Arc::clone(self)))
+    }
+
+    pub fn update(&self, id: i32, effect: &Effect) -> ShakeResult<()> {
+        ActiveBackend::update(&self.handle, id, effect)
     }
 
     pub fn erase(&self, id: i32) -> ShakeResult<()> {
@@ -157,9 +194,9 @@ impl Device {
         ActiveBackend::set_autocenter(&self.handle, value)
     }
 
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Getters
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
 
     pub fn id(&self) -> u32 {
         self.id
@@ -169,92 +206,25 @@ impl Device {
         &self.name
     }
 
-    pub fn capacity(&self) -> u32 {
-        self.capacity
+    pub fn max_effects(&self) -> u32 {
+        self.max_effects
     }
 
-    pub fn features(&self) -> &[u64] {
-        &self.features
+    pub fn raw_features(&self) -> &[u64] {
+        &self.raw_features
+    }
+
+    pub fn capabilities(&self) -> &DeviceCapabilities {
+        &self.capabilities
     }
 
     pub fn path(&self) -> &Path {
         &self.path
     }
 
-    // ---------------------------------------------------------------------
-    // Capability checks
-    // ---------------------------------------------------------------------
-
-    pub fn supports(&self, bit: u16) -> bool {
-        let idx = (bit / 64) as usize;
-        let b = bit % 64;
-
-        self.features
-            .get(idx)
-            .map(|chunk| (chunk & (1 << b)) != 0)
-            .unwrap_or(false)
-    }
-
-    // Linux backend: real feature bits
-    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-    pub fn supports_rumble(&self) -> bool {
-        self.supports(crate::linux::FF_RUMBLE)
-    }
-
-    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-    pub fn supports_periodic(&self) -> bool {
-        self.supports(crate::linux::FF_PERIODIC)
-    }
-
-    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-    pub fn supports_spring(&self) -> bool {
-        self.supports(crate::linux::FF_SPRING)
-    }
-
-    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-    pub fn supports_friction(&self) -> bool {
-        self.supports(crate::linux::FF_FRICTION)
-    }
-
-    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-    pub fn supports_damper(&self) -> bool {
-        self.supports(crate::linux::FF_DAMPER)
-    }
-
-    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-    pub fn supports_inertia(&self) -> bool {
-        self.supports(crate::linux::FF_INERTIA)
-    }
-
-    // Mock backend: everything supported
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_rumble(&self) -> bool {
-        true
-    }
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_periodic(&self) -> bool {
-        true
-    }
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_spring(&self) -> bool {
-        true
-    }
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_friction(&self) -> bool {
-        true
-    }
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_damper(&self) -> bool {
-        true
-    }
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_inertia(&self) -> bool {
-        true
-    }
-
-    // ---------------------------------------------------------------------
-    // Simple effect helpers
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Simple helpers
+    // -------------------------------------------------------------------------
 
     pub fn rumble(
         self: &Arc<Self>,
@@ -278,17 +248,14 @@ impl Device {
     }
 }
 
-// -------------------------------------------------------------------------
-// Debug implementation
-// -------------------------------------------------------------------------
-
 impl std::fmt::Debug for Device {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Device")
             .field("id", &self.id)
             .field("name", &self.name)
-            .field("capacity", &self.capacity)
-            .field("features", &self.features)
+            .field("max_effects", &self.max_effects)
+            .field("raw_features", &self.raw_features)
+            .field("capabilities", &self.capabilities)
             .field("path", &self.path)
             .finish()
     }

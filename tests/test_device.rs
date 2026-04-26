@@ -30,8 +30,8 @@ fn open_info_clones_metadata_correctly() {
 
         assert_eq!(dev.id(), info.id);
         assert_eq!(dev.name(), info.name);
-        assert_eq!(dev.capacity(), info.capacity);
-        assert_eq!(dev.features(), info.features.as_slice());
+        assert_eq!(dev.max_effects(), info.max_effects);
+        assert_eq!(dev.raw_features(), info.raw_features.as_slice());
     }
 }
 
@@ -56,8 +56,8 @@ fn capability_checks_do_not_panic() {
     if let Some(info) = list.first() {
         let dev = Device::open_info(info).unwrap();
 
-        let _ = dev.supports_rumble();
-        let _ = dev.supports_periodic();
+        let _ = dev.capabilities().rumble;
+        let _ = dev.capabilities().periodic;
     }
 }
 
@@ -116,8 +116,8 @@ fn open_path_opens_same_device() {
     let dev2 = Device::open_path(info.path.as_path()).unwrap();
 
     assert_eq!(dev1.name(), dev2.name());
-    assert_eq!(dev1.capacity(), dev2.capacity());
-    assert_eq!(dev1.features(), dev2.features());
+    assert_eq!(dev1.max_effects(), dev2.max_effects()); // ← FIXED
+    assert_eq!(dev1.raw_features(), dev2.raw_features());
 }
 
 #[test]
@@ -188,16 +188,12 @@ fn rumble_direction_is_preserved() {
 
     let handle = dev.upload(&effect).unwrap();
 
-    // If upload succeeded, direction was passed to the kernel.
-    // We cannot inspect ff_effect directly (private), so this is enough.
     assert!(handle.id() >= 0);
 }
 
 #[cfg(feature = "linux-backend")]
 #[test]
 fn enumerate_handles_missing_input_dir() {
-    // Temporarily simulate missing /dev/input by calling enumerate()
-    // If /dev/input is missing, enumerate() must return Err(Device)
     let result = shake::device::Device::enumerate();
     assert!(result.is_err() || result.is_ok());
 }

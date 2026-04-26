@@ -1,8 +1,7 @@
 //! Tests for the Backend trait using a minimal in-test fake backend.
 //! This ensures the tests run under plain `cargo test` with no features.
 
-use shake::backend::Backend;
-use shake::device::DeviceInfo;
+use shake::backend::{Backend, RawDeviceInfo};
 use shake::effect::*;
 use shake::error::{ShakeError, ShakeResult};
 
@@ -27,13 +26,15 @@ impl Backend for FakeBackend {
         })
     }
 
-    fn query(_handle: &Self::Handle) -> ShakeResult<DeviceInfo> {
-        Ok(DeviceInfo {
-            id: 0,
+    fn close(_handle: Self::Handle) {
+        // no-op
+    }
+
+    fn query(_handle: &Self::Handle) -> ShakeResult<RawDeviceInfo> {
+        Ok(RawDeviceInfo {
             name: "Fake Device".into(),
             capacity: 16,
             features: vec![u64::MAX],
-            path: PathBuf::from("/dev/fake0"),
         })
     }
 
@@ -41,6 +42,16 @@ impl Backend for FakeBackend {
         let mut lock = handle.effects.lock().unwrap();
         lock.push(Some(effect.clone()));
         Ok((lock.len() - 1) as i32)
+    }
+
+    fn update(handle: &Self::Handle, id: i32, effect: &Effect) -> ShakeResult<()> {
+        let mut lock = handle.effects.lock().unwrap();
+        if let Some(slot) = lock.get_mut(id as usize) {
+            *slot = Some(effect.clone());
+            Ok(())
+        } else {
+            Err(ShakeError::Effect)
+        }
     }
 
     fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
@@ -94,7 +105,6 @@ fn backend_open_and_query_are_consistent() {
 
     assert_eq!(info.name, "Fake Device");
     assert_eq!(info.capacity, 16);
-    assert_eq!(info.path, PathBuf::from("/dev/fake0"));
 }
 
 #[test]

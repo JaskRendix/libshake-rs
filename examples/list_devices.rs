@@ -7,7 +7,7 @@ fn main() -> ShakeResult<()> {
     for info in &devices {
         println!("Device #{}:", info.id);
         println!("  Name: {}", info.name);
-        println!("  Capacity: {}", info.capacity);
+        println!("  Capacity: {}", info.max_effects);
         println!("  Path: {}", info.path.display());
     }
 

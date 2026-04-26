@@ -176,6 +176,40 @@ impl Effect {
             Effect::Inertia(_) => 0,
         }
     }
+
+    pub fn with_duration(mut self, dur: u16) -> Self {
+        match &mut self {
+            Effect::Rumble(e) => e.duration = dur,
+            Effect::Periodic(e) => e.duration = dur,
+            Effect::Constant(e) => e.duration = dur,
+            Effect::Ramp(e) => e.duration = dur,
+            _ => {}
+        }
+        self
+    }
+
+    pub fn is_condition(&self) -> bool {
+        matches!(
+            self,
+            Effect::Spring(_) | Effect::Friction(_) | Effect::Damper(_) | Effect::Inertia(_)
+        )
+    }
+
+    pub fn direction_deg(&self) -> f32 {
+        (self.direction() as f32 / 65535.0) * 360.0
+    }
+
+    pub fn with_direction_deg(mut self, deg: f32) -> Self {
+        let dir = ((deg / 360.0) * 65535.0).round() as u16;
+        match &mut self {
+            Effect::Rumble(e) => e.direction = dir,
+            Effect::Periodic(e) => e.direction = dir,
+            Effect::Constant(e) => e.direction = dir,
+            Effect::Ramp(e) => e.direction = dir,
+            _ => {}
+        }
+        self
+    }
 }
 
 pub fn visualize_direction(direction: u16) -> &'static str {
