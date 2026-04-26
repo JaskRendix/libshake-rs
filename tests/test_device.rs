@@ -223,3 +223,124 @@ fn spring_upload_succeeds() {
     let handle = dev.upload(&effect).unwrap();
     assert!(handle.id() >= 0);
 }
+
+#[test]
+fn capabilities_match_raw_features() {
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return,
+    };
+
+    let dev = Device::open_info(info).unwrap();
+    let caps = dev.capabilities();
+
+    // Basic invariants
+    assert_eq!(caps.max_effects, dev.max_effects());
+
+    // Feature bits must match raw_features[0]
+    let f0 = info.raw_features.first().copied().unwrap_or(0);
+
+    assert_eq!(caps.rumble, (f0 & (1 << 0)) != 0);
+    assert_eq!(caps.periodic, (f0 & (1 << 1)) != 0);
+    assert_eq!(caps.spring, (f0 & (1 << 2)) != 0);
+    assert_eq!(caps.friction, (f0 & (1 << 3)) != 0);
+    assert_eq!(caps.damper, (f0 & (1 << 4)) != 0);
+    assert_eq!(caps.inertia, (f0 & (1 << 5)) != 0);
+}
+
+#[test]
+fn capabilities_are_cached_and_stable() {
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return,
+    };
+
+    let dev = Device::open_info(info).unwrap();
+
+    let c1 = dev.capabilities();
+    let c2 = dev.capabilities();
+
+    // Same reference, not recomputed
+    assert!(std::ptr::eq(c1, c2));
+
+    // Values must be identical
+    assert_eq!(c1.max_effects, c2.max_effects);
+    assert_eq!(c1.rumble, c2.rumble);
+    assert_eq!(c1.periodic, c2.periodic);
+    assert_eq!(c1.spring, c2.spring);
+    assert_eq!(c1.friction, c2.friction);
+    assert_eq!(c1.damper, c2.damper);
+    assert_eq!(c1.inertia, c2.inertia);
+}
+
+#[test]
+fn capabilities_consistent_across_multiple_opens() {
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return,
+    };
+
+    let dev1 = Device::open_info(info).unwrap();
+    let dev2 = Device::open_info(info).unwrap();
+
+    assert_eq!(
+        dev1.capabilities().max_effects,
+        dev2.capabilities().max_effects
+    );
+    assert_eq!(dev1.capabilities().rumble, dev2.capabilities().rumble);
+    assert_eq!(dev1.capabilities().periodic, dev2.capabilities().periodic);
+    assert_eq!(dev1.capabilities().spring, dev2.capabilities().spring);
+    assert_eq!(dev1.capabilities().friction, dev2.capabilities().friction);
+    assert_eq!(dev1.capabilities().damper, dev2.capabilities().damper);
+    assert_eq!(dev1.capabilities().inertia, dev2.capabilities().inertia);
+}
+
+#[test]
+fn deviceinfo_maps_exactly_into_device() {
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return,
+    };
+
+    let dev = Device::open_info(info).unwrap();
+
+    assert_eq!(dev.id(), info.id);
+    assert_eq!(dev.name(), info.name);
+    assert_eq!(dev.max_effects(), info.max_effects);
+    assert_eq!(dev.raw_features(), info.raw_features.as_slice());
+    assert_eq!(dev.path(), info.path.as_path());
+}
+
+#[cfg(feature = "mock-backend")]
+#[test]
+fn mock_backend_reports_all_capabilities() {
+    let list = Device::enumerate().unwrap();
+    let info = list.first().unwrap();
+    let dev = Device::open_info(info).unwrap();
+    let caps = dev.capabilities();
+
+    assert!(caps.rumble);
+    assert!(caps.periodic);
+    assert!(caps.spring);
+    assert!(caps.friction);
+    assert!(caps.damper);
+    assert!(caps.inertia);
+}
+
+#[test]
+fn max_effects_is_nonzero() {
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return,
+    };
+
+    assert!(info.max_effects > 0);
+
+    let dev = Device::open_info(info).unwrap();
+    assert!(dev.max_effects() > 0);
+}
