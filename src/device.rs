@@ -11,7 +11,7 @@ use crate::simple::*;
 use crate::linux as backend;
 
 #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-use crate::linux::{FF_PERIODIC, FF_RUMBLE};
+use crate::linux::{FF_DAMPER, FF_FRICTION, FF_INERTIA, FF_PERIODIC, FF_RUMBLE, FF_SPRING};
 
 #[cfg(feature = "mock-backend")]
 use crate::mock as backend;
@@ -194,6 +194,46 @@ impl Device {
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_periodic(&self) -> bool {
         self.supports(FF_PERIODIC)
+    }
+
+    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+    pub fn supports_spring(&self) -> bool {
+        self.supports(FF_SPRING)
+    }
+
+    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+    pub fn supports_friction(&self) -> bool {
+        self.supports(FF_FRICTION)
+    }
+
+    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+    pub fn supports_damper(&self) -> bool {
+        self.supports(FF_DAMPER)
+    }
+
+    #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
+    pub fn supports_inertia(&self) -> bool {
+        self.supports(FF_INERTIA)
+    }
+
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_spring(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_friction(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_damper(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_inertia(&self) -> bool {
+        true
     }
 
     #[cfg(feature = "mock-backend")]

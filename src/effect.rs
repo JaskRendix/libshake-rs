@@ -42,6 +42,10 @@ pub enum EffectType {
     Periodic,
     Constant,
     Ramp,
+    Spring,
+    Friction,
+    Damper,
+    Inertia,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,12 +113,26 @@ pub struct RampEffect {
     pub direction: u16,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ConditionEffect {
+    pub right_saturation: u16,
+    pub left_saturation: u16,
+    pub right_coeff: i16,
+    pub left_coeff: i16,
+    pub deadband: u16,
+    pub center: i16,
+}
+
 #[derive(Debug, Clone)]
 pub enum Effect {
     Rumble(RumbleEffect),
     Periodic(PeriodicEffect),
     Constant(ConstantEffect),
     Ramp(RampEffect),
+    Spring(ConditionEffect),
+    Friction(ConditionEffect),
+    Damper(ConditionEffect),
+    Inertia(ConditionEffect),
 }
 
 impl Effect {
@@ -124,6 +142,10 @@ impl Effect {
             Effect::Periodic(_) => EffectType::Periodic,
             Effect::Constant(_) => EffectType::Constant,
             Effect::Ramp(_) => EffectType::Ramp,
+            Effect::Spring(_) => EffectType::Spring,
+            Effect::Friction(_) => EffectType::Friction,
+            Effect::Damper(_) => EffectType::Damper,
+            Effect::Inertia(_) => EffectType::Inertia,
         }
     }
 
@@ -134,6 +156,10 @@ impl Effect {
             Effect::Periodic(e) => e.duration,
             Effect::Constant(e) => e.duration,
             Effect::Ramp(e) => e.duration,
+            Effect::Spring(_) => 0,
+            Effect::Friction(_) => 0,
+            Effect::Damper(_) => 0,
+            Effect::Inertia(_) => 0,
         }
     }
 
@@ -144,6 +170,10 @@ impl Effect {
             Effect::Periodic(e) => e.direction,
             Effect::Constant(e) => e.direction,
             Effect::Ramp(e) => e.direction,
+            Effect::Spring(_) => 0,
+            Effect::Friction(_) => 0,
+            Effect::Damper(_) => 0,
+            Effect::Inertia(_) => 0,
         }
     }
 }

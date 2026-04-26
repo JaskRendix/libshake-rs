@@ -12,7 +12,8 @@ use nix::sys::stat::Mode;
 use nix::unistd;
 
 use crate::effect::{
-    ConstantEffect, Effect, Envelope, PeriodicEffect, PeriodicWaveform, RampEffect, RumbleEffect,
+    ConditionEffect, ConstantEffect, Effect, Envelope, PeriodicEffect, PeriodicWaveform,
+    RampEffect, RumbleEffect,
 };
 use crate::error::{ShakeError, ShakeResult};
 
@@ -33,6 +34,11 @@ const FF_CUSTOM: u16 = 0x5D;
 
 const FF_GAIN: u16 = 0x60;
 const FF_AUTOCENTER: u16 = 0x61;
+
+pub const FF_SPRING: u16 = 0x53;
+pub const FF_FRICTION: u16 = 0x54;
+pub const FF_DAMPER: u16 = 0x55;
+pub const FF_INERTIA: u16 = 0x56;
 
 // Public struct returned to device.rs
 pub struct DeviceInfo {
@@ -263,12 +269,41 @@ fn ramp_to_ff(r: &RampEffect) -> libc::ff_effect {
     ff
 }
 
+fn condition_to_ff(c: &ConditionEffect, effect_type: u16) -> libc::ff_effect {
+    let mut ff: libc::ff_effect = unsafe { std::mem::zeroed() };
+    ff.type_ = effect_type;
+
+    unsafe {
+        // ff.u is a union; for condition effects it contains 2 axes
+        let cond_ptr = ff.u.as_mut_ptr().cast::<[libc::ff_condition_effect; 2]>();
+
+        for i in 0..2 {
+            (*cond_ptr)[i].right_saturation = c.right_saturation;
+            (*cond_ptr)[i].left_saturation = c.left_saturation;
+            (*cond_ptr)[i].right_coeff = c.right_coeff;
+            (*cond_ptr)[i].left_coeff = c.left_coeff;
+            (*cond_ptr)[i].deadband = c.deadband;
+            (*cond_ptr)[i].center = c.center;
+        }
+    }
+
+    // Condition effects ignore replay length/delay
+    ff.id = -1;
+    ff.direction = 0;
+
+    ff
+}
+
 fn effect_to_ff(effect: &Effect) -> ShakeResult<libc::ff_effect> {
     match effect {
         Effect::Rumble(r) => Ok(rumble_to_ff(r)),
         Effect::Periodic(p) => Ok(periodic_to_ff(p)),
         Effect::Constant(c) => Ok(constant_to_ff(c)),
         Effect::Ramp(r) => Ok(ramp_to_ff(r)),
+        Effect::Spring(c) => Ok(condition_to_ff(c, FF_SPRING)),
+        Effect::Friction(c) => Ok(condition_to_ff(c, FF_FRICTION)),
+        Effect::Damper(c) => Ok(condition_to_ff(c, FF_DAMPER)),
+        Effect::Inertia(c) => Ok(condition_to_ff(c, FF_INERTIA)),
     }
 }
 

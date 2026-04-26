@@ -1,41 +1,35 @@
-use shake::effect::*;
-use shake::simple::*;
+use shake::device::Device;
+use shake::error::ShakeResult;
 
-fn main() {
-    let effect = simple_periodic(
-        PeriodicWaveform::Sine,
-        1.0, // magnitude
-        0.2, // attack
-        0.6, // sustain
-        0.2, // fade
-    );
+fn main() -> ShakeResult<()> {
+    // With mock-backend enabled, this opens /dev/mock0
+    let dev = Device::open(0)?;
+    println!("--- Haptic Visualization Demo ---");
 
-    let Effect::Periodic(p) = effect else {
-        eprintln!("Not a periodic effect");
-        return;
-    };
+    // 1. Spring
+    println!("\n[Spring]");
+    let spring = shake::simple::simple_spring(1.0, 0.0);
+    let h1 = dev.upload(&spring)?;
+    h1.play()?;
 
-    println!("Visualizing periodic effect:");
-    println!(
-        "waveform={:?}, magnitude={}, duration={}ms",
-        p.waveform, p.magnitude, p.duration
-    );
+    // 2. Friction
+    println!("\n[Friction]");
+    let friction = shake::simple::simple_friction(0.5);
+    let h2 = dev.upload(&friction)?;
+    h2.play()?;
 
-    for t in (0..p.duration as u32).step_by(50) {
-        let sine = (2.0 * std::f32::consts::PI * (t as f32) / p.period as f32).sin();
+    // 3. Damper
+    println!("\n[Damper]");
+    let damper = shake::simple::simple_damper(0.7);
+    let h3 = dev.upload(&damper)?;
+    h3.play()?;
 
-        let env = if t < p.envelope.attack_length as u32 {
-            t as f32 / p.envelope.attack_length as f32
-        } else if t > (p.duration as u32 - p.envelope.fade_length as u32) {
-            let fade_start = (p.duration - p.envelope.fade_length) as f32;
-            1.0 - ((t as f32 - fade_start) / p.envelope.fade_length as f32)
-        } else {
-            1.0
-        };
+    // 4. Inertia
+    println!("\n[Inertia]");
+    let inertia = shake::simple::simple_inertia(0.6);
+    let h4 = dev.upload(&inertia)?;
+    h4.play()?;
 
-        let val = (sine * p.magnitude as f32 * env) as i32;
-
-        let bar = "*".repeat((val.abs() / 1000) as usize);
-        println!("{:4}ms | {:7} | {}", t, val, bar);
-    }
+    println!("\nVisualization complete.");
+    Ok(())
 }

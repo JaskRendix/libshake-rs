@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::effect::{Effect, PeriodicEffect, RampEffect};
+use crate::effect::{ConditionEffect, Effect, PeriodicEffect, RampEffect};
 use crate::error::{ShakeError, ShakeResult};
 
 lazy_static::lazy_static! {
@@ -39,7 +39,7 @@ pub fn query_device(_file: &File) -> ShakeResult<DeviceInfo> {
     println!("[MOCK] Device Inspector:");
     println!("  Name: Mock Device");
     println!("  Capacity: 16 effects");
-    println!("  Features: Rumble, Periodic, Constant, Ramp");
+    println!("  Features: Rumble, Periodic, Constant, Ramp, Spring, Friction, Damper, Inertia");
 
     mock_dashboard();
 
@@ -101,7 +101,14 @@ pub fn play_effect(_file: &File, id: i32) -> ShakeResult<()> {
             "[MOCK] Rumble: strong={}, weak={}, duration={}ms",
             r.strong_magnitude, r.weak_magnitude, r.duration
         ),
-        _ => println!("[MOCK] Effect type not visualized"),
+        Effect::Constant(c) => println!(
+            "[MOCK] Constant: level={}, duration={}ms",
+            c.level, c.duration
+        ),
+        Effect::Spring(c) => visualize_condition(c, "SPRING"),
+        Effect::Friction(c) => visualize_condition(c, "FRICTION"),
+        Effect::Damper(c) => visualize_condition(c, "DAMPER"),
+        Effect::Inertia(c) => visualize_condition(c, "INERTIA"),
     }
 
     visualize_timeline();
@@ -179,6 +186,22 @@ fn visualize_ramp(r: &RampEffect) {
         let bar = "*".repeat((val.abs() as i32 / 2000) as usize);
         println!("{:4}ms | {:7.0} | {}", t, val, bar);
     }
+}
+
+fn visualize_condition(c: &ConditionEffect, label: &str) {
+    println!("[MOCK] Condition Monitor ({}):", label);
+    println!("  Center: {}", c.center);
+    println!("  Deadband: {}", c.deadband);
+    println!("  Coefficients: L:{} R:{}", c.left_coeff, c.right_coeff);
+    println!(
+        "  Saturation:  L:{} R:{}",
+        c.left_saturation, c.right_saturation
+    );
+
+    let left = if c.left_coeff > 0 { "<<" } else { "--" };
+    let right = if c.right_coeff > 0 { ">>" } else { "--" };
+
+    println!("  Feel: [ {} | center | {} ]", left, right);
 }
 
 // Timeline visualizer

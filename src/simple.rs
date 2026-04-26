@@ -1,7 +1,7 @@
 use crate::effect::{
-    ConstantEffect, Effect, Envelope, PeriodicEffect, PeriodicWaveform, RampEffect, RumbleEffect,
-    CONSTANT_LEVEL_MAX, CONSTANT_LEVEL_MIN, PERIODIC_MAGNITUDE_MAX, PERIODIC_MAGNITUDE_MIN,
-    RUMBLE_STRONG_MAGNITUDE_MAX, RUMBLE_WEAK_MAGNITUDE_MAX,
+    ConditionEffect, ConstantEffect, Effect, Envelope, PeriodicEffect, PeriodicWaveform,
+    RampEffect, RumbleEffect, CONSTANT_LEVEL_MAX, CONSTANT_LEVEL_MIN, PERIODIC_MAGNITUDE_MAX,
+    PERIODIC_MAGNITUDE_MIN, RUMBLE_STRONG_MAGNITUDE_MAX, RUMBLE_WEAK_MAGNITUDE_MAX,
 };
 
 fn clamp_u16(value: f32, max: u16) -> u16 {
@@ -124,4 +124,48 @@ pub fn simple_ramp(start: f32, end: f32, attack: f32, sustain: f32, fade: f32) -
         delay: 0,
         direction: 0,
     })
+}
+
+fn scale_condition_coeff(strength: f32) -> i16 {
+    // Same signed scaling style as your ramp helper
+    if strength >= 0.0 {
+        (strength * 0x7FFF as f32).clamp(0.0, 0x7FFF as f32) as i16
+    } else {
+        (strength * 0x8000 as f32).clamp(-0x8000 as f32, 0.0) as i16
+    }
+}
+
+fn scale_deadband(deadzone: f32) -> u16 {
+    (deadzone * 0x7FFF as f32).clamp(0.0, 0x7FFF as f32) as u16
+}
+
+fn make_condition_effect(strength: f32, deadzone: f32) -> ConditionEffect {
+    let coeff = scale_condition_coeff(strength);
+    let deadband = scale_deadband(deadzone);
+
+    ConditionEffect {
+        right_saturation: 0x7FFF,
+        left_saturation: 0x7FFF,
+        right_coeff: coeff,
+        left_coeff: coeff,
+        deadband,
+        center: 0,
+    }
+}
+
+pub fn simple_spring(strength: f32, deadzone: f32) -> Effect {
+    Effect::Spring(make_condition_effect(strength, deadzone))
+}
+
+pub fn simple_friction(strength: f32) -> Effect {
+    // Friction has no deadzone; use 0
+    Effect::Friction(make_condition_effect(strength, 0.0))
+}
+
+pub fn simple_damper(strength: f32) -> Effect {
+    Effect::Damper(make_condition_effect(strength, 0.0))
+}
+
+pub fn simple_inertia(strength: f32) -> Effect {
+    Effect::Inertia(make_condition_effect(strength, 0.0))
 }
