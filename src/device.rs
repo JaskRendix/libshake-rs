@@ -1,20 +1,16 @@
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::backend::Backend;
 use crate::effect::Effect;
 use crate::error::{ShakeError, ShakeResult};
-use crate::simple::*;
 
 // Backend selection
 #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-use crate::linux as backend;
-
-#[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
-use crate::linux::{FF_DAMPER, FF_FRICTION, FF_INERTIA, FF_PERIODIC, FF_RUMBLE, FF_SPRING};
+use crate::linux::LinuxBackend as ActiveBackend;
 
 #[cfg(feature = "mock-backend")]
-use crate::mock as backend;
+use crate::mock::MockBackend as ActiveBackend;
 
 pub struct EffectHandle {
     id: i32,
@@ -52,7 +48,7 @@ pub struct Device {
     name: String,
     capacity: u32,
     features: Vec<u64>,
-    file: File,
+    handle: <ActiveBackend as Backend>::Handle,
     path: PathBuf,
 }
 
@@ -65,16 +61,19 @@ pub struct DeviceInfo {
 }
 
 impl Device {
+    // ---------------------------------------------------------------------
+    // Device enumeration / opening
+    // ---------------------------------------------------------------------
+
     pub fn enumerate() -> ShakeResult<Vec<DeviceInfo>> {
         let mut devices = Vec::new();
-        let entries: Vec<PathBuf> = backend::scan_event_nodes()?;
+        let entries = ActiveBackend::scan()?;
 
         for path in entries {
-            if backend::probe_device(&path)? {
-                let file = backend::open_device(&path)?;
-                let info = backend::query_device(&file)?;
+            if ActiveBackend::open(&path).is_ok() {
+                let handle = ActiveBackend::open(&path)?;
+                let info = ActiveBackend::query(&handle)?;
 
-                // Stable ID: extract event number if possible
                 let stable_id = path
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -101,34 +100,66 @@ impl Device {
             .into_iter()
             .find(|d| d.id == id)
             .ok_or(ShakeError::Device)?;
-
         Device::open_info(&info)
     }
 
     pub fn open_info(info: &DeviceInfo) -> ShakeResult<Arc<Device>> {
-        let file = backend::open_device(&info.path)?;
+        let handle = ActiveBackend::open(&info.path)?;
         Ok(Arc::new(Device {
             id: info.id,
             name: info.name.clone(),
             capacity: info.capacity,
             features: info.features.clone(),
-            file,
+            handle,
             path: info.path.clone(),
         }))
     }
 
     pub fn open_path(path: &Path) -> ShakeResult<Arc<Device>> {
-        let file = backend::open_device(path)?;
-        let info = backend::query_device(&file)?;
+        let handle = ActiveBackend::open(path)?;
+        let info = ActiveBackend::query(&handle)?;
         Ok(Arc::new(Device {
             id: 0,
             name: info.name,
             capacity: info.capacity,
             features: info.features,
-            file,
+            handle,
             path: path.to_path_buf(),
         }))
     }
+
+    // ---------------------------------------------------------------------
+    // Backend operations
+    // ---------------------------------------------------------------------
+
+    pub fn upload(self: &Arc<Self>, effect: &Effect) -> ShakeResult<EffectHandle> {
+        let id = ActiveBackend::upload(&self.handle, effect)?;
+        Ok(EffectHandle::new(id, Arc::clone(self)))
+    }
+
+    pub fn erase(&self, id: i32) -> ShakeResult<()> {
+        ActiveBackend::erase(&self.handle, id)
+    }
+
+    pub fn play(&self, id: i32) -> ShakeResult<()> {
+        ActiveBackend::play(&self.handle, id)
+    }
+
+    pub fn stop(&self, id: i32) -> ShakeResult<()> {
+        ActiveBackend::stop(&self.handle, id)
+    }
+
+    pub fn set_gain(&self, gain: u16) -> ShakeResult<()> {
+        ActiveBackend::set_gain(&self.handle, gain)
+    }
+
+    pub fn set_autocenter(&self, value: u16) -> ShakeResult<()> {
+        ActiveBackend::set_autocenter(&self.handle, value)
+    }
+
+    // ---------------------------------------------------------------------
+    // Getters
+    // ---------------------------------------------------------------------
 
     pub fn id(&self) -> u32 {
         self.id
@@ -150,32 +181,10 @@ impl Device {
         &self.path
     }
 
-    pub fn upload(self: &Arc<Self>, effect: &Effect) -> ShakeResult<EffectHandle> {
-        let id = backend::upload_effect(&self.file, effect)?;
-        Ok(EffectHandle::new(id, Arc::clone(self)))
-    }
+    // ---------------------------------------------------------------------
+    // Capability checks
+    // ---------------------------------------------------------------------
 
-    pub fn erase(&self, id: i32) -> ShakeResult<()> {
-        backend::erase_effect(&self.file, id)
-    }
-
-    pub fn play(&self, id: i32) -> ShakeResult<()> {
-        backend::play_effect(&self.file, id)
-    }
-
-    pub fn stop(&self, id: i32) -> ShakeResult<()> {
-        backend::stop_effect(&self.file, id)
-    }
-
-    pub fn set_gain(&self, gain: u16) -> ShakeResult<()> {
-        backend::set_gain(&self.file, gain)
-    }
-
-    pub fn set_autocenter(&self, value: u16) -> ShakeResult<()> {
-        backend::set_autocenter(&self.file, value)
-    }
-
-    /// Generic feature check
     pub fn supports(&self, bit: u16) -> bool {
         let idx = (bit / 64) as usize;
         let b = bit % 64;
@@ -186,65 +195,66 @@ impl Device {
             .unwrap_or(false)
     }
 
+    // Linux backend: real feature bits
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_rumble(&self) -> bool {
-        self.supports(FF_RUMBLE)
+        self.supports(crate::linux::FF_RUMBLE)
     }
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_periodic(&self) -> bool {
-        self.supports(FF_PERIODIC)
+        self.supports(crate::linux::FF_PERIODIC)
     }
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_spring(&self) -> bool {
-        self.supports(FF_SPRING)
+        self.supports(crate::linux::FF_SPRING)
     }
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_friction(&self) -> bool {
-        self.supports(FF_FRICTION)
+        self.supports(crate::linux::FF_FRICTION)
     }
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_damper(&self) -> bool {
-        self.supports(FF_DAMPER)
+        self.supports(crate::linux::FF_DAMPER)
     }
 
     #[cfg(all(feature = "linux-backend", not(feature = "mock-backend")))]
     pub fn supports_inertia(&self) -> bool {
-        self.supports(FF_INERTIA)
+        self.supports(crate::linux::FF_INERTIA)
     }
 
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_spring(&self) -> bool {
-        true
-    }
-
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_friction(&self) -> bool {
-        true
-    }
-
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_damper(&self) -> bool {
-        true
-    }
-
-    #[cfg(feature = "mock-backend")]
-    pub fn supports_inertia(&self) -> bool {
-        true
-    }
-
+    // Mock backend: everything supported
     #[cfg(feature = "mock-backend")]
     pub fn supports_rumble(&self) -> bool {
         true
     }
-
     #[cfg(feature = "mock-backend")]
     pub fn supports_periodic(&self) -> bool {
         true
     }
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_spring(&self) -> bool {
+        true
+    }
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_friction(&self) -> bool {
+        true
+    }
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_damper(&self) -> bool {
+        true
+    }
+    #[cfg(feature = "mock-backend")]
+    pub fn supports_inertia(&self) -> bool {
+        true
+    }
+
+    // ---------------------------------------------------------------------
+    // Simple effect helpers
+    // ---------------------------------------------------------------------
 
     pub fn rumble(
         self: &Arc<Self>,
@@ -252,7 +262,7 @@ impl Device {
         weak: f32,
         secs: f32,
     ) -> ShakeResult<EffectHandle> {
-        let effect = simple_rumble(strong, weak, secs);
+        let effect = crate::simple::simple_rumble(strong, weak, secs);
         self.upload(&effect)
     }
 
@@ -263,10 +273,14 @@ impl Device {
         secs: f32,
         direction_deg: f32,
     ) -> ShakeResult<EffectHandle> {
-        let effect = simple_rumble_dir(strong, weak, secs, direction_deg);
+        let effect = crate::simple::simple_rumble_dir(strong, weak, secs, direction_deg);
         self.upload(&effect)
     }
 }
+
+// -------------------------------------------------------------------------
+// Debug implementation
+// -------------------------------------------------------------------------
 
 impl std::fmt::Debug for Device {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

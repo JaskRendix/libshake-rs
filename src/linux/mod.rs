@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 
+use crate::backend::Backend;
 use std::fs;
 use std::fs::File;
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd};
@@ -40,11 +41,12 @@ pub const FF_FRICTION: u16 = 0x54;
 pub const FF_DAMPER: u16 = 0x55;
 pub const FF_INERTIA: u16 = 0x56;
 
-// Public struct returned to device.rs
 pub struct DeviceInfo {
+    pub id: u32,
     pub name: String,
     pub capacity: u32,
     pub features: Vec<u64>,
+    pub path: PathBuf,
 }
 
 // ioctl definitions
@@ -168,9 +170,11 @@ pub fn query_device(fd: &File) -> ShakeResult<DeviceInfo> {
     }
 
     Ok(DeviceInfo {
+        id: 0, // Device::enumerate() will assign the real ID
         name,
         capacity: effects as u32,
         features,
+        path: PathBuf::new(), // Device::enumerate() overwrites this too
     })
 }
 
@@ -372,6 +376,56 @@ pub fn set_gain(fd: &File, gain: u16) -> ShakeResult<()> {
 
 pub fn set_autocenter(fd: &File, value: u16) -> ShakeResult<()> {
     send_ff_event(fd, FF_AUTOCENTER, value as i32)
+}
+
+pub struct LinuxBackend;
+
+impl Backend for LinuxBackend {
+    type Handle = File;
+
+    fn scan() -> ShakeResult<Vec<PathBuf>> {
+        scan_event_nodes()
+    }
+
+    fn open(path: &Path) -> ShakeResult<Self::Handle> {
+        open_device(path)
+    }
+
+    fn query(handle: &Self::Handle) -> ShakeResult<crate::device::DeviceInfo> {
+        let raw = query_device(handle)?;
+
+        Ok(crate::device::DeviceInfo {
+            id: 0, // Device::enumerate() will overwrite this
+            name: raw.name,
+            capacity: raw.capacity,
+            features: raw.features,
+            path: PathBuf::new(), // Device::enumerate() overwrites this too
+        })
+    }
+
+    fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32> {
+        upload_effect(handle, effect)
+    }
+
+    fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
+        play_effect(handle, id)
+    }
+
+    fn stop(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
+        stop_effect(handle, id)
+    }
+
+    fn erase(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
+        erase_effect(handle, id)
+    }
+
+    fn set_gain(handle: &Self::Handle, value: u16) -> ShakeResult<()> {
+        set_gain(handle, value)
+    }
+
+    fn set_autocenter(handle: &Self::Handle, value: u16) -> ShakeResult<()> {
+        set_autocenter(handle, value)
+    }
 }
 
 #[cfg(test)]

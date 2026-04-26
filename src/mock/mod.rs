@@ -1,3 +1,4 @@
+use crate::backend::Backend;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -289,7 +290,55 @@ pub fn export_mock_log(path: &Path) -> ShakeResult<()> {
     Ok(())
 }
 
-// Tests
+pub struct MockBackend;
+
+impl Backend for MockBackend {
+    type Handle = File;
+
+    fn scan() -> ShakeResult<Vec<PathBuf>> {
+        scan_event_nodes()
+    }
+
+    fn open(path: &Path) -> ShakeResult<Self::Handle> {
+        open_device(path)
+    }
+
+    fn query(handle: &Self::Handle) -> ShakeResult<crate::device::DeviceInfo> {
+        let raw = query_device(handle)?;
+
+        Ok(crate::device::DeviceInfo {
+            id: 0,
+            name: raw.name,
+            capacity: raw.capacity,
+            features: raw.features,
+            path: PathBuf::from("/dev/mock0"),
+        })
+    }
+
+    fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32> {
+        upload_effect(handle, effect)
+    }
+
+    fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
+        play_effect(handle, id)
+    }
+
+    fn stop(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
+        stop_effect(handle, id)
+    }
+
+    fn erase(handle: &Self::Handle, id: i32) -> ShakeResult<()> {
+        erase_effect(handle, id)
+    }
+
+    fn set_gain(handle: &Self::Handle, value: u16) -> ShakeResult<()> {
+        set_gain(handle, value)
+    }
+
+    fn set_autocenter(handle: &Self::Handle, value: u16) -> ShakeResult<()> {
+        set_autocenter(handle, value)
+    }
+}
 
 #[cfg(test)]
 mod tests {
