@@ -1,58 +1,98 @@
-# libShake
+# **libShake**
 
-A cross‑platform haptic library written in Rust.
+A cross‑platform, backend‑agnostic haptic library written in Rust.
 
-## Overview
+libShake provides a unified API for force‑feedback devices, supporting rumble, periodic, constant, ramp, and condition effects (spring, friction, damper, inertia).  
+It is designed for real hardware, simulation, testing, and visualization.
 
-libShake provides a unified API for force‑feedback devices.  
-It exposes rumble, periodic, constant, ramp, and condition effects (spring, friction, damper, inertia) through a backend‑agnostic interface.
+---
 
-The library includes:
+## **Features**
 
-- **Linux backend** using the evdev force‑feedback subsystem  
-- **Mock backend** for development and testing  
-- A shared `Device` API for enumeration, capability checks, upload, play, stop, erase, gain, and autocenter  
-- An `Effect` model with envelopes, timing, direction, and condition parameters  
-- A `simple` module with helpers for constructing common effects
+### **Backend‑agnostic architecture**
+libShake is built around a `Backend` trait that abstracts force‑feedback implementations.  
+Two backends are included:
 
-The mock backend provides:
+- **Linux backend**  
+  Uses the evdev force‑feedback subsystem (`/dev/input/event*`).
+
+- **Mock backend**  
+  A fully simulated device for development, testing, visualization, and profiling.
+
+### **Unified Device API**
+The `Device` type provides:
+
+- Enumeration and capability checks  
+- Upload, play, stop, erase  
+- Gain and autocenter control  
+- Stable effect handles  
+- Path‑based and ID‑based opening  
+- Backend‑independent behavior
+
+### **Rich Effect Model**
+libShake exposes:
+
+- **RumbleEffect**  
+- **PeriodicEffect** (sine, triangle, square, sawtooth)  
+- **ConstantEffect**  
+- **RampEffect**  
+- **ConditionEffect** (spring, friction, damper, inertia)
+
+All effects support:
+
+- Envelopes (attack/fade)  
+- Duration and delay  
+- Direction (0–360°)  
+- Signed/unsigned scaling  
+- Backend‑safe clamping
+
+### **Simple API**
+The `simple` module provides ergonomic constructors:
+
+- `simple_rumble()`  
+- `simple_periodic()`  
+- `simple_constant()`  
+- `simple_ramp()`  
+- `simple_spring()`, `simple_friction()`, `simple_damper()`, `simple_inertia()`
+
+These helpers handle scaling, envelopes, durations, and direction.
+
+### **Mock Backend Tools**
+The mock backend includes:
 
 - Timeline tracking  
 - Rumble mixing with gain  
-- ASCII visualizers for periodic, ramp, and all condition effects  
-- Gain and autocenter state  
-- A profiler  
-- Log export
+- ASCII visualizers for periodic, ramp, and condition effects  
+- Gain/autocenter state  
+- Effect profiler  
+- Log export  
+- Deterministic behavior for CI
 
-## Origins
+---
 
-The original libShake was written in C and targeted Linux force‑feedback.  
-This Rust version is a clean rewrite with a revised API, backend split, and extended effect model.
+## **Installation**
 
-Original project: [https://github.com/zear/libShake](https://github.com/zear/libShake)
-
-## Installation
-
-### Linux
-
-Build with Cargo:
-
-```sh
-cargo build --release
-```
-
-The Linux backend uses `nix` and `libc` to access `/dev/input/event*`.
-
-## Usage
-
-Add to `Cargo.toml`:
+Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 shake = { path = "path/to/libshake" }
 ```
 
-Enumerate devices:
+### **Linux backend**
+The Linux backend is enabled by default and uses `nix` + `libc` to access evdev.
+
+Build normally:
+
+```sh
+cargo build --release
+```
+
+---
+
+## **Usage**
+
+### **Enumerate devices**
 
 ```rust
 use shake::device::Device;
@@ -63,7 +103,7 @@ for info in devices {
 }
 ```
 
-Upload and play a rumble effect:
+### **Open a device and play a rumble**
 
 ```rust
 use shake::device::Device;
@@ -82,46 +122,117 @@ let id = dev.upload(&Effect::Rumble(RumbleEffect {
 dev.play(id)?;
 ```
 
-## Testing
+### **Using the simple API**
+
+```rust
+use shake::device::Device;
+use shake::simple::simple_rumble;
+
+let dev = Device::open(0)?;
+let handle = dev.upload(&simple_rumble(1.0, 0.5, 0.3))?;
+handle.play()?;
+```
+
+---
+
+## **Backend Architecture**
+
+libShake separates hardware access from the public API through the `Backend` trait:
+
+```rust
+pub trait Backend {
+    type Handle;
+
+    fn scan() -> ShakeResult<Vec<PathBuf>>;
+    fn open(path: &Path) -> ShakeResult<Self::Handle>;
+    fn query(handle: &Self::Handle) -> ShakeResult<DeviceInfo>;
+
+    fn upload(handle: &Self::Handle, effect: &Effect) -> ShakeResult<i32>;
+    fn play(handle: &Self::Handle, id: i32) -> ShakeResult<()>;
+    fn stop(handle: &Self::Handle, id: i32) -> ShakeResult<()>;
+    fn erase(handle: &Self::Handle, id: i32) -> ShakeResult<()>;
+
+    fn set_gain(handle: &Self::Handle, value: u16) -> ShakeResult<()>;
+    fn set_autocenter(handle: &Self::Handle, value: u16) -> ShakeResult<()>;
+}
+```
+
+The `Device` type wraps this trait and provides a stable, ergonomic API.
+
+Backends included:
+
+- `linux` — real hardware  
+- `mock` — simulation, testing, visualization  
+
+---
+
+## **Testing**
 
 The test suite covers:
 
+- Backend trait contract (via an in‑test fake backend)  
 - Mock backend behavior  
 - Linux event‑node scanning  
 - Effect‑to‑ff conversion  
 - ConditionEffect conversion  
 - Simple API helpers  
-- Timeline, profiler, and log export in the mock backend  
+- Edge cases and clamping  
+- Device enumeration, opening, and effect lifecycle  
 
-Tests run without hardware:
+All tests run without hardware:
 
 ```sh
 cargo test
 ```
 
-## Examples
+The mock backend and fake backend ensure deterministic CI behavior.
 
-See the `examples/` directory for:
+---
 
-- Basic rumble and periodic usage  
+## **Examples**
+
+The `examples/` directory includes:
+
+- Rumble and periodic basics  
 - Capacity, playback, order, update, and mixing tests  
 - Condition effects on real hardware  
 - Mock backend visualizers  
-- Combined effect demonstrations  
-- A full demo suite cycling through all effect types  
+- Combined effect demos  
+- A full demo cycling through all effect types  
 
-Run any example with:
+Run any example:
 
 ```sh
 cargo run --example <name>
 ```
 
-## Authors
+---
+
+## **Origins**
+
+This Rust rewrite is based on the original C library:
+
+[https://github.com/zear/libShake](https://github.com/zear/libShake)
+
+The Rust version introduces:
+
+- Backend abstraction  
+- Stronger type system  
+- Safer effect model  
+- Mock backend  
+- Expanded test suite  
+- Cleaner API  
+
+---
+
+## **Authors**
 
 - Giorgio (JaskRendix)  
 - Artur Rojek (zear)  
 - Joe Vargas (jxv)
 
-## License
+---
+
+## **License**
 
 MIT License.
