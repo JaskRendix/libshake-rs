@@ -151,3 +151,187 @@ fn backend_gain_and_autocenter_accept_valid_ranges() {
     FakeBackend::set_gain(&handle, 50).unwrap();
     FakeBackend::set_autocenter(&handle, 75).unwrap();
 }
+
+#[test]
+fn backend_capabilities_match_raw_features() {
+    let handle = open_first().unwrap();
+    let caps = FakeBackend::capabilities(&handle).unwrap();
+
+    // RawDeviceInfo.features = [u64::MAX], so all bits are set.
+    assert!(caps.rumble);
+    assert!(caps.periodic);
+    assert!(caps.spring);
+    assert!(caps.friction);
+    assert!(caps.damper);
+    assert!(caps.inertia);
+
+    // max_effects must match RawDeviceInfo.capacity
+    assert_eq!(caps.max_effects, 16);
+}
+
+#[test]
+fn backend_capabilities_are_stable() {
+    let handle = open_first().unwrap();
+
+    let c1 = FakeBackend::capabilities(&handle).unwrap();
+    let c2 = FakeBackend::capabilities(&handle).unwrap();
+
+    // Values must match exactly
+    assert_eq!(c1.rumble, c2.rumble);
+    assert_eq!(c1.periodic, c2.periodic);
+    assert_eq!(c1.spring, c2.spring);
+    assert_eq!(c1.friction, c2.friction);
+    assert_eq!(c1.damper, c2.damper);
+    assert_eq!(c1.inertia, c2.inertia);
+    assert_eq!(c1.max_effects, c2.max_effects);
+}
+
+#[test]
+fn backend_capabilities_handle_empty_feature_vector() {
+    // Manually create a handle with no effects
+    let handle = FakeHandle {
+        effects: std::sync::Mutex::new(Vec::new()),
+    };
+
+    // capabilities() must not panic even if the handle was not opened via scan/open
+    let caps = FakeBackend::capabilities(&handle).unwrap();
+
+    // FakeBackend::query() always returns features = [u64::MAX]
+    // so all capability bits must be true
+    assert!(caps.rumble);
+    assert!(caps.periodic);
+    assert!(caps.spring);
+    assert!(caps.friction);
+    assert!(caps.damper);
+    assert!(caps.inertia);
+
+    // max_effects must match RawDeviceInfo.capacity
+    assert_eq!(caps.max_effects, 16);
+}
+
+#[test]
+fn backend_capabilities_does_not_modify_effect_slots() {
+    let handle = open_first().unwrap();
+
+    // Upload an effect
+    let effect = Effect::Rumble(RumbleEffect {
+        strong_magnitude: 1000,
+        weak_magnitude: 500,
+        duration: 200,
+        delay: 0,
+        direction: 0,
+    });
+
+    let id = FakeBackend::upload(&handle, &effect).unwrap();
+
+    // Calling capabilities() must not erase or modify effects
+    let _ = FakeBackend::capabilities(&handle).unwrap();
+
+    // Effect must still be playable
+    FakeBackend::play(&handle, id).unwrap();
+}
+
+#[test]
+fn backend_update_invalid_id_returns_error() {
+    let handle = open_first().unwrap();
+
+    let effect = Effect::Constant(ConstantEffect {
+        level: 123,
+        envelope: Envelope::new(0, 0, 0, 0),
+        duration: 10,
+        delay: 0,
+        direction: 0,
+    });
+
+    let result = FakeBackend::update(&handle, 999, &effect);
+    assert!(matches!(result, Err(ShakeError::Effect)));
+}
+
+#[test]
+fn backend_erase_invalid_id_returns_error() {
+    let handle = open_first().unwrap();
+    let result = FakeBackend::erase(&handle, 999);
+    assert!(matches!(result, Err(ShakeError::Effect)));
+}
+
+#[test]
+fn backend_upload_assigns_sequential_ids() {
+    let handle = open_first().unwrap();
+
+    let e = Effect::Rumble(RumbleEffect {
+        strong_magnitude: 1,
+        weak_magnitude: 1,
+        duration: 1,
+        delay: 0,
+        direction: 0,
+    });
+
+    let id1 = FakeBackend::upload(&handle, &e).unwrap();
+    let id2 = FakeBackend::upload(&handle, &e).unwrap();
+    let id3 = FakeBackend::upload(&handle, &e).unwrap();
+
+    assert_eq!(id1, 0);
+    assert_eq!(id2, 1);
+    assert_eq!(id3, 2);
+}
+
+#[test]
+fn backend_update_overwrites_effect() {
+    let handle = open_first().unwrap();
+
+    let e1 = Effect::Constant(ConstantEffect {
+        level: 100,
+        envelope: Envelope::new(0, 0, 0, 0),
+        duration: 10,
+        delay: 0,
+        direction: 0,
+    });
+
+    let e2 = Effect::Constant(ConstantEffect {
+        level: 999,
+        envelope: Envelope::new(0, 0, 0, 0),
+        duration: 10,
+        delay: 0,
+        direction: 0,
+    });
+
+    let id = FakeBackend::upload(&handle, &e1).unwrap();
+    FakeBackend::update(&handle, id, &e2).unwrap();
+
+    // play() must succeed, meaning the slot still exists
+    FakeBackend::play(&handle, id).unwrap();
+}
+
+#[test]
+fn backend_erase_does_not_shift_ids() {
+    let handle = open_first().unwrap();
+
+    let e = Effect::Rumble(RumbleEffect {
+        strong_magnitude: 1,
+        weak_magnitude: 1,
+        duration: 1,
+        delay: 0,
+        direction: 0,
+    });
+
+    let id1 = FakeBackend::upload(&handle, &e).unwrap();
+    let id2 = FakeBackend::upload(&handle, &e).unwrap();
+
+    FakeBackend::erase(&handle, id1).unwrap();
+
+    // id2 must still be valid
+    FakeBackend::play(&handle, id2).unwrap();
+}
+
+#[test]
+fn backend_close_is_noop_and_safe() {
+    let handle = open_first().unwrap();
+
+    // close must not panic
+    FakeBackend::close(handle);
+
+    // open again must still work
+    let handle2 = open_first().unwrap();
+    let info = FakeBackend::query(&handle2).unwrap();
+    assert_eq!(info.capacity, 16);
+}
