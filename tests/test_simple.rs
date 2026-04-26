@@ -176,3 +176,39 @@ fn simple_periodic_with_period_sets_period() {
         _ => panic!("Expected Periodic effect"),
     }
 }
+
+#[test]
+fn simple_spring_creates_spring_effect() {
+    let e = simple_spring(0.8, 0.1);
+    match e {
+        Effect::Spring(_) => {}
+        _ => panic!("Expected Spring effect"),
+    }
+}
+
+#[test]
+fn simple_friction_creates_friction_effect() {
+    let e = simple_friction(0.6);
+    match e {
+        Effect::Friction(_) => {}
+        _ => panic!("Expected Friction effect"),
+    }
+}
+
+#[test]
+fn simple_damper_creates_damper_effect() {
+    let e = simple_damper(0.7);
+    match e {
+        Effect::Damper(_) => {}
+        _ => panic!("Expected Damper effect"),
+    }
+}
+
+#[test]
+fn simple_inertia_creates_inertia_effect() {
+    let e = simple_inertia(0.5);
+    match e {
+        Effect::Inertia(_) => {}
+        _ => panic!("Expected Inertia effect"),
+    }
+}

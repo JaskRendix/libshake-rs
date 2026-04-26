@@ -201,3 +201,29 @@ fn enumerate_handles_missing_input_dir() {
     let result = shake::device::Device::enumerate();
     assert!(result.is_err() || result.is_ok());
 }
+
+#[cfg(feature = "linux-backend")]
+#[test]
+fn spring_upload_succeeds() {
+    use shake::effect::{ConditionEffect, Effect};
+
+    let list = Device::enumerate().unwrap();
+    let info = match list.first() {
+        Some(i) => i,
+        None => return,
+    };
+
+    let dev = Device::open_info(info).unwrap();
+
+    let effect = Effect::Spring(ConditionEffect {
+        right_saturation: 10000,
+        left_saturation: 10000,
+        right_coeff: 5000,
+        left_coeff: 5000,
+        deadband: 0,
+        center: 0,
+    });
+
+    let handle = dev.upload(&effect).unwrap();
+    assert!(handle.id() >= 0);
+}
